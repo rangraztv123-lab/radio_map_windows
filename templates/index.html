@@ -94,10 +94,14 @@
 </div>
 
 <!-- Workspace Lane -->
+<div id="workspace-splitter" role="separator" aria-orientation="vertical" aria-label="تغییر عرض میز کار" tabindex="0"></div>
 <aside id="workspace" class="workspace-column" aria-label="Workspace">
   <div class="workspace-header">
     <h3>🧩 میز کار</h3>
-    <button id="workspace-clear" class="workspace-clear" type="button" title="پاک کردن همه">پاک کردن</button>
+    <div class="workspace-actions">
+      <button id="workspace-toggle" class="workspace-toggle" type="button" aria-expanded="true" aria-label="جمع کردن میز کار" title="جمع کردن میز کار"><span aria-hidden="true">⮜</span></button>
+      <button id="workspace-clear" class="workspace-clear" type="button" title="پاک کردن همه">پاک کردن</button>
+    </div>
   </div>
   <div id="workspace-list" class="workspace-list" aria-live="polite">
     <p class="workspace-empty">برای اضافه کردن کارت، بکش و بنداز اینجا یا روی 📌 کلیک کن</p>

@@ -87,17 +87,29 @@ editCancel.addEventListener('click', closeEditModal);
 // ================= Workspace Feature (temporary board) =================
 (function(){
   const LS_KEY = 'workspaceItems:v1';
+  const WIDTH_KEY = 'workspace:width';
+  const COLLAPSED_KEY = 'workspace:collapsed';
+  const MIN_WIDTH = 260;
+  const MAX_WIDTH_RATIO = 0.4;
+  const DEFAULT_WIDTH = 320;
   const resultsContainer = document.getElementById('results');
   const workspace = {
     list: document.getElementById('workspace-list'),
-    clearBtn: document.getElementById('workspace-clear')
+    clearBtn: document.getElementById('workspace-clear'),
+    column: document.getElementById('workspace'),
+    splitter: document.getElementById('workspace-splitter'),
+    toggleBtn: document.getElementById('workspace-toggle')
   };
 
-  if (!workspace.list) {
+  let currentWidth = DEFAULT_WIDTH;
+  let isCollapsed = false;
+
+  if (!workspace.list || !workspace.column) {
     return;
   }
 
   document.body.classList.add('workspace-enabled');
+  setupLayoutControls();
 
   window.Workspace = {
     init,
@@ -106,6 +118,156 @@ editCancel.addEventListener('click', closeEditModal);
     render,
     clearAll
   };
+
+  function clampWidth(px){
+    const max = getMaxWidth();
+    return Math.min(Math.max(px, MIN_WIDTH), max);
+  }
+
+  function getMaxWidth(){
+    return Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_WIDTH_RATIO));
+  }
+
+  function readStoredWidth(){
+    const stored = parseInt(localStorage.getItem(WIDTH_KEY), 10);
+    if (Number.isFinite(stored)) {
+      return clampWidth(stored);
+    }
+    return clampWidth(DEFAULT_WIDTH);
+  }
+
+  function saveStoredWidth(width){
+    localStorage.setItem(WIDTH_KEY, String(Math.round(width)));
+  }
+
+  function readCollapsedState(){
+    return localStorage.getItem(COLLAPSED_KEY) === 'true';
+  }
+
+  function saveCollapsedState(state){
+    localStorage.setItem(COLLAPSED_KEY, state ? 'true' : 'false');
+  }
+
+  function applyWidth(width, persist = false){
+    currentWidth = clampWidth(width);
+    document.body.style.setProperty('--workspace-width', `${currentWidth}px`);
+    if (!isCollapsed){
+      document.body.classList.add('workspace-padding');
+    }
+    if (workspace.splitter){
+      workspace.splitter.setAttribute('aria-valuenow', String(currentWidth));
+      workspace.splitter.setAttribute('aria-valuemin', String(MIN_WIDTH));
+      workspace.splitter.setAttribute('aria-valuemax', String(getMaxWidth()));
+    }
+    if (persist){
+      saveStoredWidth(currentWidth);
+    }
+  }
+
+  function applyCollapseState(collapsed){
+    isCollapsed = collapsed;
+    document.body.classList.toggle('workspace-collapsed', collapsed);
+    document.body.classList.toggle('workspace-padding', !collapsed);
+    if (workspace.column){
+      workspace.column.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+    }
+    if (workspace.splitter){
+      workspace.splitter.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+      workspace.splitter.tabIndex = collapsed ? -1 : 0;
+    }
+    if (workspace.toggleBtn){
+      workspace.toggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      workspace.toggleBtn.setAttribute('aria-label', collapsed ? 'نمایش میز کار' : 'جمع کردن میز کار');
+      workspace.toggleBtn.setAttribute('title', collapsed ? 'نمایش میز کار' : 'جمع کردن میز کار');
+      const icon = workspace.toggleBtn.querySelector('span');
+      if (icon){
+        icon.textContent = collapsed ? '⮞' : '⮜';
+      }
+    }
+  }
+
+  function setupLayoutControls(){
+    currentWidth = readStoredWidth();
+    applyWidth(currentWidth, false);
+    applyCollapseState(readCollapsedState());
+
+    if (workspace.toggleBtn){
+      workspace.toggleBtn.addEventListener('click', ()=>{
+        applyCollapseState(!isCollapsed);
+        saveCollapsedState(isCollapsed);
+      });
+    }
+
+    if (workspace.splitter){
+      workspace.splitter.addEventListener('mousedown', startResize);
+      workspace.splitter.addEventListener('touchstart', startResize, {passive:false});
+      workspace.splitter.addEventListener('keydown', handleSplitterKeydown);
+    }
+
+    window.addEventListener('resize', handleWindowResize);
+  }
+
+  function startResize(ev){
+    if (isCollapsed) return;
+    const isTouch = ev.type === 'touchstart';
+    if (isTouch && ev.touches.length > 1) return;
+    ev.preventDefault();
+    document.body.classList.add('workspace-resizing');
+
+    const moveEvent = isTouch ? 'touchmove' : 'mousemove';
+    const endEvent = isTouch ? 'touchend' : 'mouseup';
+    const cancelEvent = isTouch ? 'touchcancel' : 'mouseleave';
+
+    const moveHandler = (event)=>{
+      const point = isTouch ? (event.touches && event.touches[0] ? event.touches[0].clientX : null) : event.clientX;
+      if (point == null) return;
+      if (isTouch) event.preventDefault();
+      updateWidthFromPointer(point, true);
+    };
+
+    const finishHandler = (event)=>{
+      if (isTouch && event && event.type === 'touchend' && event.touches && event.touches.length > 0){
+        return;
+      }
+      cleanup();
+      saveStoredWidth(currentWidth);
+    };
+
+    function cleanup(){
+      document.body.classList.remove('workspace-resizing');
+      document.removeEventListener(moveEvent, moveHandler);
+      document.removeEventListener(endEvent, finishHandler);
+      document.removeEventListener(cancelEvent, finishHandler);
+    }
+
+    document.addEventListener(moveEvent, moveHandler, {passive:!isTouch});
+    document.addEventListener(endEvent, finishHandler);
+    document.addEventListener(cancelEvent, finishHandler);
+  }
+
+  function updateWidthFromPointer(clientX, immediate){
+    const viewport = window.innerWidth || 0;
+    const newWidth = clampWidth(viewport - clientX);
+    applyWidth(newWidth, false);
+    if (!immediate){
+      saveStoredWidth(newWidth);
+    }
+  }
+
+  function handleSplitterKeydown(ev){
+    if (isCollapsed) return;
+    if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight' || ev.key === 'ArrowUp' || ev.key === 'ArrowDown'){
+      ev.preventDefault();
+      const delta = (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp') ? 10 : -10;
+      const newWidth = clampWidth(currentWidth + delta);
+      applyWidth(newWidth, true);
+    }
+  }
+
+  function handleWindowResize(){
+    const clamped = clampWidth(currentWidth);
+    applyWidth(clamped, clamped !== currentWidth);
+  }
 
   function getProjectKey(){
     return (typeof currentProject === 'string' && currentProject) ? currentProject : '__default__';
@@ -263,15 +425,41 @@ editCancel.addEventListener('click', closeEditModal);
 
   function makeCardsDraggable(){
     getResultCards().forEach(card => {
-      if (card.dataset.workspaceDraggable === '1') return;
-      card.dataset.workspaceDraggable = '1';
-      card.setAttribute('draggable', 'true');
-      card.addEventListener('dragstart', (ev)=>{
-        const id = ensureCardId(card);
-        ev.dataTransfer.effectAllowed = 'copy';
-        ev.dataTransfer.setData('text/x-card-id', id);
-        ev.dataTransfer.setData('text/plain', id);
+      ensureCardId(card);
+      card.classList.add('has-drag-handle');
+      card.setAttribute('draggable', 'false');
+
+      let handle = card.querySelector('.drag-handle');
+      if (!handle){
+        handle = document.createElement('button');
+        handle.type = 'button';
+        handle.className = 'drag-handle';
+        handle.innerHTML = '<span aria-hidden="true">⠿</span>';
+        handle.setAttribute('draggable', 'true');
+        handle.draggable = true;
+        handle.setAttribute('title', 'کشیدن برای افزودن به میز کار');
+        handle.setAttribute('aria-label', 'کشیدن برای افزودن به میز کار');
+        card.insertBefore(handle, card.firstChild);
+      }
+
+      card.querySelectorAll('*').forEach(el => {
+        if (el !== handle){
+          el.setAttribute('draggable', 'false');
+        }
       });
+
+      if (!handle.dataset.workspaceHandle){
+        handle.dataset.workspaceHandle = '1';
+        handle.addEventListener('dragstart', (ev)=>{
+          const id = ensureCardId(card);
+          ev.stopPropagation();
+          ev.dataTransfer.effectAllowed = 'copy';
+          ev.dataTransfer.setData('text/x-card-id', id);
+          ev.dataTransfer.setData('text/plain', id);
+        });
+        handle.addEventListener('mousedown', (ev)=> ev.stopPropagation());
+        handle.addEventListener('touchstart', (ev)=> ev.stopPropagation(), {passive:true});
+      }
     });
   }
 
