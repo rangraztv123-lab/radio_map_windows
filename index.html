@@ -93,26 +93,20 @@
   </div>
 </div>
 
-<aside id="workspace" class="workspace" aria-label="میز کار" tabindex="-1">
-  <div class="workspace-inner">
+<div id="workspacePanel" class="workspace-panel" aria-hidden="true" aria-label="میز کار">
+  <div id="workspaceResizer" class="workspace-resizer" role="separator" aria-orientation="vertical"></div>
+  <div class="workspace-content">
     <header class="workspace-header">
-      <h3 class="title">🧩 میز کار</h3>
+      <h3 class="title">میز کار</h3>
       <div class="workspace-actions">
-        <div id="workspaceClearConfirm" class="workspace-clear-confirm" aria-hidden="true">
-          <span>پاک شود؟</span>
-          <button type="button" class="btn ghost" id="workspaceConfirmYes">بله</button>
-          <button type="button" class="btn ghost" id="workspaceConfirmNo">خیر</button>
-        </div>
-        <button type="button" class="btn ghost" id="workspaceClear">پاک کردن</button>
-        <button type="button" class="btn" id="workspaceCollapse" aria-expanded="true" aria-label="جمع کردن میز کار">❯</button>
+        <button type="button" class="btn ghost" id="workspaceClear">یک‌کَن</button>
       </div>
     </header>
-    <div id="workspace-list" class="workspace-list" aria-live="polite" role="list" aria-label="آیتم‌های میز کار">
-      <p class="workspace-empty">برای اضافه کردن کارت، بکش و بنداز اینجا یا روی 📌 کلیک کن</p>
-    </div>
+    <p class="workspace-hint">برای اضافه کردن کارت، بکش و بنداز اینجا</p>
+    <div id="workspaceList" class="workspace-list" role="list" aria-live="polite" aria-label="آیتم‌های میز کار"></div>
   </div>
-</aside>
-<button id="workspace-chev" class="workspace-chev" aria-label="Toggle workspace">❮</button>
+</div>
+<button id="workspaceToggle" class="workspace-toggle" aria-controls="workspacePanel" aria-expanded="false" aria-label="باز کردن میز کار">❮</button>
 
 <script src="/static/app.js"></script>
 <script src="/static/editor.js"></script>
