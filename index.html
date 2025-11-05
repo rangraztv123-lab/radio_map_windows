@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radio Map — Windows</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="wrap topbar">
+    <div class="projectbar">
+      <span class="muted">پروژه:</span>
+      <select id="projectSelect" style="max-width:220px"></select>
+      <button class="btn" id="projectNew">پروژه جدید</button>
+      <button class="btn" id="projectRename">تغییر نام</button>
+      <button class="btn danger" id="projectDelete">حذف پروژه</button>
+    </div>
+    <div>
+      <h1>🎙️ رادیو مپ — ویندوز</h1>
+      <div class="muted">داده‌ها در پوشهٔ <b>data/</b> ذخیره می‌شوند (JSON)</div>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="toggleLogic">منطق فیلتر: <b id="logicLabel">OR</b></button>
+      <button class="btn ghost" id="exportCsv">دانلود CSV</button>
+      <button class="btn" id="showUsedBtn">فقط استفاده‌شده‌ها</button>
+      <button class="btn ghost" id="filterUsedBtn">فقط استفاده‌شده‌ها</button>
+      <label class="btn ghost" style="cursor:pointer">
+        بارگذاری CSV
+        <input id="importCsv" type="file" accept=".csv" style="display:none">
+      </label>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="row">
+
+    <div class="card">
+      <h3 class="title">جستجو و نتایج</h3>
+      <input id="search" placeholder="بنویس: گرونی، پدر پارسا، تپق… و Enter بزن">
+      <div class="toolbar">
+        <div id="activeChips" class="chips"></div>
+      </div>
+      <div id="stats" class="muted" style="margin:8px 0 14px"></div>
+      <div id="results"></div>
+    </div>
+
+    <div class="card">
+      <h3 class="title">پیشنهاد تگ‌های مرتبط</h3>
+      <div id="suggestions" class="chips" style="margin-bottom:12px"></div>
+      <div class="muted" style="margin-bottom:18px">پیشنهادها براساس تگ‌های هم‌رخداد در نتایج فعلی است.</div>
+
+      <h3 class="title">➕ افزودن آیتم جدید</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <input id="addFile" placeholder="مسیر یا نام فایل">
+        <input id="addTags" placeholder="تگ‌ها (Enter برای افزودن هر تگ)">
+      </div>
+      <div id="addTagChips" class="chips" style="margin-top:8px"></div>
+      <div id="addTagHints" class="chips" style="margin-top:6px"></div>
+      <textarea id="addDesc" placeholder="توضیح کوتاری (اختیاری)"></textarea>
+      <div class="toolbar">
+        <button class="btn primary" id="addBtn">افزودن</button>
+        <span id="addMsg" class="muted"></span>
+      </div>
+
+      <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+        <span class="pill"><span class="muted">تعداد کل آیتم‌ها:</span> <b id="totalCount">0</b></span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="editBackdrop" class="modal-backdrop" aria-hidden="true">
+  <div class="modal">
+    <header>
+      <h3 class="title">ویرایش آیتم</h3>
+      <div class="muted">هر بخش را تغییر بده و در پایان «ذخیره» را بزن.</div>
+    </header>
+    <div class="input-row">
+      <input id="editFile" placeholder="مسیر یا نام فایل">
+      <input id="editTags" placeholder="تگ‌ها (Enter برای هر تگ)">
+    </div>
+    <div id="editTagChips" class="chips" style="margin-top:8px"></div>
+    <div id="editTagHints" class="chips" style="margin-top:6px"></div>
+    <textarea id="editDesc" placeholder="توضیح کوتاه"></textarea>
+    <div class="actions">
+      <button class="btn primary" id="editSave">ذخیره</button>
+      <button class="btn" id="editCancel">لغو</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+<script src="/static/editor.js"></script>
+<script src="/static/radmap_hotfix_2025-09-16c.js"></script>
+</body>
+</html>
