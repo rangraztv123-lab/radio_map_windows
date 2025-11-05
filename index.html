@@ -93,24 +93,22 @@
   </div>
 </div>
 
-<div id="workspacePanel" class="workspace-panel" aria-hidden="true" aria-label="میز کار">
-  <div id="workspaceResizer" class="workspace-resizer" role="separator" aria-orientation="vertical"></div>
-  <div class="workspace-content">
+<aside id="workspacePanel" class="workspace-panel" aria-label="میز کار" aria-hidden="true">
+  <div id="workspaceResizer" class="workspace-resizer" role="separator" aria-orientation="vertical" aria-hidden="true"></div>
+  <div class="workspace-shell">
     <header class="workspace-header">
-      <h3 class="title">میز کار</h3>
-      <div class="workspace-actions">
-        <button type="button" class="btn ghost" id="workspaceClear">یک‌کَن</button>
-      </div>
+      <h3 class="workspace-title">میز کار</h3>
+      <button id="workspaceClear" type="button" class="btn ghost workspace-clear">یک‌کَن</button>
     </header>
-    <p class="workspace-hint">برای اضافه کردن کارت، بکش و بنداز اینجا</p>
+    <p id="workspaceHint" class="workspace-hint">برای اضافه کردن کارت، بکش و بنداز اینجا</p>
     <div id="workspaceList" class="workspace-list" role="list" aria-live="polite" aria-label="آیتم‌های میز کار"></div>
   </div>
-</div>
+</aside>
 <button id="workspaceToggle" class="workspace-toggle" aria-controls="workspacePanel" aria-expanded="false" aria-label="باز کردن میز کار">❮</button>
 
-<script src="/static/app.js"></script>
-<script src="/static/editor.js"></script>
-<script src="/static/radmap_hotfix_2025-09-16c.js"></script>
+<script defer src="/static/editor.js"></script>
+<script defer src="/static/app.js"></script>
+<script defer src="/static/radmap_hotfix_2025-09-16c.js"></script>
 
 </body>
 </html>

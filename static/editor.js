@@ -84,680 +84,595 @@ editSave.addEventListener('click', async ()=>{
 });
 editCancel.addEventListener('click', closeEditModal);
 
-// ================= Workspace Feature (temporary board) =================
-(function(){
-  const LS_KEY = 'workspaceItems:v1';
-  const WIDTH_KEY = 'workspace:width';
-  const COLLAPSED_KEY = 'workspace:collapsed';
-  const MIN_WIDTH = 260;
-  const MAX_WIDTH_RATIO = 0.45;
-  const DEFAULT_WIDTH = 320;
-  const resultsContainer = document.getElementById('results');
-  const workspace = {
-    list: document.getElementById('workspace-list'),
-    clearBtn: document.getElementById('workspace-clear'),
-    column: document.getElementById('workspace'),
-    splitter: document.getElementById('workspace-splitter'),
-    dropzone: document.getElementById('workspace-dropzone'),
-    toggleBtn: document.getElementById('workspace-toggle')
-  };
-
-  let currentWidth = DEFAULT_WIDTH;
-  let isCollapsed = false;
-  let dropzoneDepth = 0;
-  let globalDragListenersAttached = false;
-
-  if (!workspace.list || !workspace.column) {
-    return;
-  }
-
-  document.body.classList.add('workspace-enabled');
-  setupLayoutControls();
-
-  window.Workspace = {
-    init,
-    addById,
-    removeById,
-    render,
-    clearAll
-  };
-
-  function clampWidth(px){
-    const max = getMaxWidth();
-    return Math.min(Math.max(px, MIN_WIDTH), max);
-  }
-
-  function getMaxWidth(){
-    return Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_WIDTH_RATIO));
-  }
-
-  function readStoredWidth(){
-    const stored = parseInt(localStorage.getItem(WIDTH_KEY), 10);
-    if (Number.isFinite(stored)) {
-      return clampWidth(stored);
-    }
-    return clampWidth(DEFAULT_WIDTH);
-  }
-
-  function saveStoredWidth(width){
-    localStorage.setItem(WIDTH_KEY, String(Math.round(width)));
-  }
-
-  function readCollapsedState(){
-    return localStorage.getItem(COLLAPSED_KEY) === 'true';
-  }
-
-  function saveCollapsedState(state){
-    localStorage.setItem(COLLAPSED_KEY, state ? 'true' : 'false');
-  }
-
-  function updateBodyPadding(){
-    if (isCollapsed){
-      document.body.classList.remove('workspace-padding');
-      document.body.style.paddingRight = '0px';
-    } else {
-      document.body.classList.add('workspace-padding');
-      document.body.style.paddingRight = `${currentWidth}px`;
-    }
-  }
-
-  function applyWidth(width, persist = false){
-    currentWidth = clampWidth(width);
-    document.body.style.setProperty('--workspace-width', `${currentWidth}px`);
-    updateBodyPadding();
-    if (workspace.splitter){
-      workspace.splitter.setAttribute('aria-valuenow', String(currentWidth));
-      workspace.splitter.setAttribute('aria-valuemin', String(MIN_WIDTH));
-      workspace.splitter.setAttribute('aria-valuemax', String(getMaxWidth()));
-    }
-    if (persist){
-      saveStoredWidth(currentWidth);
-    }
-  }
-
-  function applyCollapseState(collapsed){
-    isCollapsed = collapsed;
-    document.body.classList.toggle('workspace-collapsed', collapsed);
-    document.body.classList.toggle('workspace-padding', !collapsed);
-    if (workspace.column){
-      workspace.column.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
-    }
-    if (workspace.splitter){
-      workspace.splitter.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
-      workspace.splitter.tabIndex = collapsed ? -1 : 0;
-    }
-    updateBodyPadding();
-    if (workspace.toggleBtn){
-      workspace.toggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-      workspace.toggleBtn.setAttribute('aria-label', collapsed ? 'نمایش میز کار' : 'جمع کردن میز کار');
-      workspace.toggleBtn.setAttribute('title', collapsed ? 'نمایش میز کار' : 'جمع کردن میز کار');
-      const icon = workspace.toggleBtn.querySelector('span');
-      if (icon){
-        icon.textContent = collapsed ? '⮞' : '⮜';
-      }
-    }
-    if (workspace.dropzone){
-      workspace.dropzone.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
-      workspace.dropzone.tabIndex = collapsed ? -1 : 0;
-    }
-  }
-
-  function setWorkspaceReady(state){
-    if (!workspace.column) return;
-    if (isCollapsed){
-      state = false;
-    }
-    if (!state){
-      workspace.column.classList.remove('workspace-drop-active');
-      if (workspace.dropzone){
-        workspace.dropzone.classList.remove('is-dragover');
-      }
-      dropzoneDepth = 0;
-    }
-    workspace.column.classList.toggle('workspace-drop-ready', state);
-  }
-
-  function setWorkspaceActive(state){
-    if (!workspace.column) return;
-    if (isCollapsed){
-      state = false;
-    }
-    workspace.column.classList.toggle('workspace-drop-active', state);
-    if (workspace.dropzone){
-      workspace.dropzone.classList.toggle('is-dragover', state);
-    }
-    if (!state){
-      dropzoneDepth = 0;
-    }
-  }
-
-  function setupLayoutControls(){
-    currentWidth = readStoredWidth();
-    applyWidth(currentWidth, false);
-    applyCollapseState(readCollapsedState());
-
-    if (workspace.toggleBtn){
-      workspace.toggleBtn.addEventListener('click', ()=>{
-        applyCollapseState(!isCollapsed);
-        saveCollapsedState(isCollapsed);
-      });
-    }
-
-    if (workspace.splitter){
-      workspace.splitter.addEventListener('mousedown', startResize);
-      workspace.splitter.addEventListener('touchstart', startResize, {passive:false});
-      workspace.splitter.addEventListener('keydown', handleSplitterKeydown);
-    }
-
-    window.addEventListener('resize', handleWindowResize);
-
-    if (!globalDragListenersAttached){
-      document.addEventListener('dragend', finishWorkspaceDrag, true);
-      document.addEventListener('drop', finishWorkspaceDrag, true);
-      globalDragListenersAttached = true;
-    }
-  }
-
-  function startResize(ev){
-    if (isCollapsed) return;
-    const isTouch = ev.type === 'touchstart';
-    if (isTouch && ev.touches.length > 1) return;
-    ev.preventDefault();
-    document.body.classList.add('workspace-resizing');
-
-    const moveEvent = isTouch ? 'touchmove' : 'mousemove';
-    const endEvent = isTouch ? 'touchend' : 'mouseup';
-    const cancelEvent = isTouch ? 'touchcancel' : 'mouseleave';
-
-    const startPoint = isTouch ? (ev.touches && ev.touches[0] ? ev.touches[0].clientX : null) : ev.clientX;
-    if (startPoint == null) return;
-    const startWidth = currentWidth;
-
-    const moveHandler = (event)=>{
-      const point = isTouch ? (event.touches && event.touches[0] ? event.touches[0].clientX : null) : event.clientX;
-      if (point == null) return;
-      if (isTouch) event.preventDefault();
-      const delta = startPoint - point;
-      const newWidth = clampWidth(startWidth + delta);
-      applyWidth(newWidth, false);
+// ================= Workspace Manager =================
+class WorkspaceManager {
+  constructor(){
+    this.STORAGE_KEYS = {
+      items: 'workspace.items',
+      width: 'workspace.width',
+      open: 'workspace.open'
     };
+    this.CARD_MIME = 'application/x-radio-card-id';
+    this.WORKSPACE_MIME = 'application/x-workspace-item';
+    this.MIN_WIDTH = 260;
+    this.DEFAULT_WIDTH = 320;
 
-    const finishHandler = (event)=>{
-      if (isTouch && event && event.type === 'touchend' && event.touches && event.touches.length > 0){
-        return;
-      }
-      cleanup();
-      saveStoredWidth(currentWidth);
-    };
+    this.panel = null;
+    this.list = null;
+    this.hint = null;
+    this.toggle = null;
+    this.resizer = null;
+    this.clearBtn = null;
 
-    function cleanup(){
-      document.body.classList.remove('workspace-resizing');
-      document.removeEventListener(moveEvent, moveHandler);
-      document.removeEventListener(endEvent, finishHandler);
-      document.removeEventListener(cancelEvent, finishHandler);
+    this.project = null;
+    this.data = [];
+    this.items = this.loadItems();
+    this.width = this.loadWidth();
+    this.open = this.loadOpen();
+
+    this.initialized = false;
+    this.dropDepth = 0;
+    this.lastAddedId = null;
+    this.boundResizeHandler = this.handleWindowResize.bind(this);
+  }
+
+  init(){
+    if (this.initialized) return;
+
+    this.panel = document.getElementById('workspacePanel');
+    this.list = document.getElementById('workspaceList');
+    this.hint = document.getElementById('workspaceHint');
+    this.toggle = document.getElementById('workspaceToggle');
+    this.resizer = document.getElementById('workspaceResizer');
+    this.clearBtn = document.getElementById('workspaceClear');
+
+    if (!this.panel || !this.list || !this.toggle){
+      return;
     }
 
-    document.addEventListener(moveEvent, moveHandler, {passive:!isTouch});
-    document.addEventListener(endEvent, finishHandler);
-    document.addEventListener(cancelEvent, finishHandler);
-  }
+    document.body.classList.add('workspace-ready');
 
-  function handleSplitterKeydown(ev){
-    if (isCollapsed) return;
-    if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight' || ev.key === 'ArrowUp' || ev.key === 'ArrowDown'){
-      ev.preventDefault();
-      const delta = (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp') ? 10 : -10;
-      const newWidth = clampWidth(currentWidth + delta);
-      applyWidth(newWidth, true);
-    }
-  }
+    this.applyWidth(this.width, false);
+    this.applyOpen(this.open, false);
 
-  function handleWindowResize(){
-    const clamped = clampWidth(currentWidth);
-    applyWidth(clamped, clamped !== currentWidth);
-  }
-
-  function getProjectKey(){
-    return (typeof currentProject === 'string' && currentProject) ? currentProject : '__default__';
-  }
-
-  function readStorage(){
-    try{
-      const raw = JSON.parse(localStorage.getItem(LS_KEY));
-      if (Array.isArray(raw)) {
-        return { '__default__': raw };
-      }
-      return raw || {};
-    }catch(err){
-      return {};
-    }
-  }
-
-  function writeStorage(map){
-    localStorage.setItem(LS_KEY, JSON.stringify(map));
-  }
-
-  function loadIds(){
-    const map = readStorage();
-    return map[getProjectKey()] || [];
-  }
-
-  function saveIds(ids){
-    const map = readStorage();
-    map[getProjectKey()] = ids;
-    writeStorage(map);
-  }
-
-  function hash32(str){
-    let h = 2166136261 >>> 0;
-    for(let i=0;i<str.length;i++){
-      h ^= str.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    return (h>>>0).toString(16);
-  }
-
-  function ensureCardId(card){
-    if (card.dataset.itemId) return card.dataset.itemId;
-    const item = resolveItemFromCard(card);
-    if (item){
-      const id = makeItemId(item);
-      card.dataset.itemId = id;
-      return id;
-    }
-    const fallback = 'ws_' + hash32((card.innerText || '').slice(0,512));
-    card.dataset.itemId = fallback;
-    return fallback;
-  }
-
-  function resolveItemFromCard(card){
-    let idx = null;
-    const editBtn = card.querySelector('[data-edit]');
-    if (editBtn){
-      const parsed = Number(editBtn.getAttribute('data-edit'));
-      if (!Number.isNaN(parsed)) idx = parsed;
-    }
-    if (idx!=null && Array.isArray(DATA) && DATA[idx]){
-      return DATA[idx];
-    }
-    const toggleBtn = card.querySelector('[data-toggle]');
-    if (toggleBtn){
-      const parsed = Number(toggleBtn.getAttribute('data-toggle'));
-      if (!Number.isNaN(parsed) && DATA[parsed]){
-        return DATA[parsed];
-      }
-    }
-    const pathEl = card.querySelector('.path');
-    if (pathEl){
-      const text = pathEl.textContent.trim();
-      if (text && Array.isArray(DATA)){
-        return DATA.find(it => (it.file||'').trim() === text) || null;
-      }
-    }
-    return null;
-  }
-
-  function makeItemId(item){
-    return encodeURIComponent(item.file || '');
-  }
-
-  function findItemById(id){
-    const file = decodeURIComponent(id || '');
-    if (!Array.isArray(DATA)) return null;
-    let candidate = DATA.find(it => (it.file||'') === file);
-    if (!candidate && file){
-      const lower = file.toLowerCase();
-      candidate = DATA.find(it => (it.file||'').toLowerCase() === lower);
-    }
-    return candidate || null;
-  }
-
-  function init(){
-    if (workspace.dropzone){
-      workspace.dropzone.addEventListener('dragenter', handleDropzoneDragEnter);
-      workspace.dropzone.addEventListener('dragover', handleDropzoneDragOver);
-      workspace.dropzone.addEventListener('dragleave', handleDropzoneDragLeave);
-      workspace.dropzone.addEventListener('drop', handleDropzoneDrop);
+    this.toggle.addEventListener('click', () => this.toggleOpen());
+    if (this.clearBtn){
+      this.clearBtn.addEventListener('click', () => this.handleClear());
     }
 
-    if (workspace.clearBtn){
-      workspace.clearBtn.addEventListener('click', () => {
-        if (confirm('همه آیتم‌ها از میز کار حذف شود؟')){
-          clearAll();
-        }
-      });
-    }
+    this.setupResizer();
+    this.setupDropZone();
+    window.addEventListener('resize', this.boundResizeHandler);
 
-    if (resultsContainer){
-      resultsContainer.setAttribute('draggable', 'false');
-      resultsContainer.draggable = false;
-      const observer = new MutationObserver(()=>{
-        ensureCardIds();
-        injectPinButtons();
-        makeCardsDraggable();
-        render();
-      });
-      observer.observe(resultsContainer, {childList:true, subtree:true});
-    }
-
-    injectPinButtons();
-    makeCardsDraggable();
-    render();
+    this.initialized = true;
+    this.render();
   }
 
-  function ensureCardIds(){
-    getResultCards().forEach(card => ensureCardId(card));
+  destroy(){
+    window.removeEventListener('resize', this.boundResizeHandler);
   }
 
-  function getResultCards(){
-    return Array.from(document.querySelectorAll('#results .file'));
+  setProject(projectName, data){
+    this.project = projectName || null;
+    this.data = Array.isArray(data) ? data : [];
+    if (!this.initialized) return;
+    this.removeMissingItems();
+    this.render();
   }
 
-  function injectPinButtons(){
-    getResultCards().forEach(card => {
-      ensureCardId(card);
-      if (card.querySelector('.pin-to-workspace')) return;
-      const toolbar = card.querySelector('.toolbar');
-      if (!toolbar) return;
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'btn ghost pin-to-workspace';
-      btn.title = 'افزودن به میز کار';
-      btn.setAttribute('aria-label', 'افزودن به میز کار');
-      btn.textContent = '📌';
-      btn.addEventListener('click', (ev)=>{
-        ev.stopPropagation();
-        addById(ensureCardId(card));
-      });
-      toolbar.appendChild(btn);
+  refresh(){
+    if (!this.initialized) return;
+    this.removeMissingItems();
+    this.render();
+  }
+
+  registerResultCard(card, payload){
+    if (!card || !payload) return;
+    const project = payload.project || this.project;
+    const index = typeof payload.index === 'number' ? payload.index : Number(payload.index);
+    if (!project || Number.isNaN(index)) return;
+    const id = this.composeId(project, index);
+    card.dataset.workspaceId = id;
+    const grip = card.querySelector('.card-grip');
+    if (!grip || grip.dataset.wsBound === 'true') return;
+
+    grip.dataset.wsBound = 'true';
+    grip.setAttribute('draggable', 'true');
+
+    grip.addEventListener('dragstart', (ev) => {
+      ev.stopPropagation();
+      ev.dataTransfer.effectAllowed = 'copy';
+      ev.dataTransfer.setData(this.CARD_MIME, id);
+      ev.dataTransfer.setData('text/plain', id);
+      card.classList.add('drag-source', 'dragging');
+      document.body.classList.add('workspace-dragging');
+    });
+
+    grip.addEventListener('dragend', () => {
+      card.classList.remove('drag-source', 'dragging');
+      document.body.classList.remove('workspace-dragging');
     });
   }
 
-  function makeCardsDraggable(){
-    const interactiveSelector = 'button, .btn, a, input, textarea, select, label, .pin-to-workspace';
-    getResultCards().forEach(card => {
-      ensureCardId(card);
-      card.classList.add('has-drag-handle');
-      card.setAttribute('draggable', 'true');
-      card.draggable = true;
-
-      let handle = card.querySelector('.drag-handle');
-      if (!handle){
-        handle = document.createElement('button');
-        handle.type = 'button';
-        handle.className = 'drag-handle';
-        handle.innerHTML = '<span aria-hidden="true">⠿</span>';
-        handle.setAttribute('draggable', 'true');
-        handle.draggable = true;
-        handle.setAttribute('title', 'کشیدن برای افزودن به میز کار');
-        handle.setAttribute('aria-label', 'کشیدن برای افزودن به میز کار');
-        card.insertBefore(handle, card.firstChild);
-      }
-
-      card.querySelectorAll('*').forEach(el => {
-        if (el !== handle){
-          el.setAttribute('draggable', 'false');
-        }
-      });
-
-      if (!card.dataset.workspaceSurface){
-        card.dataset.workspaceSurface = '1';
-        let pointerDownTarget = null;
-        const rememberPointer = (target)=>{ pointerDownTarget = target; };
-        const resetPointer = ()=>{ pointerDownTarget = null; };
-        card.addEventListener('mousedown', (ev)=> rememberPointer(ev.target));
-        card.addEventListener('touchstart', (ev)=> rememberPointer(ev.target), {passive:true});
-        card.addEventListener('mouseup', resetPointer);
-        card.addEventListener('mouseleave', resetPointer);
-        card.addEventListener('touchend', resetPointer);
-        card.addEventListener('touchcancel', resetPointer);
-
-        card.addEventListener('dragstart', (ev)=>{
-          if (ev.target !== card) return;
-          const origin = pointerDownTarget || ev.target;
-          if (origin && origin.closest && origin.closest(interactiveSelector)){
-            ev.preventDefault();
-            finishWorkspaceDrag();
-            return;
-          }
-          if (!beginWorkspaceDrag(ev, card)){
-            ev.preventDefault();
-          }
-          pointerDownTarget = null;
-        });
-        card.addEventListener('dragend', finishWorkspaceDrag);
-      }
-
-      if (!handle.dataset.workspaceHandle){
-        handle.dataset.workspaceHandle = '1';
-        handle.addEventListener('dragstart', (ev)=>{
-          ev.stopPropagation();
-          if (!beginWorkspaceDrag(ev, card)){
-            ev.preventDefault();
-          }
-        });
-        handle.addEventListener('dragend', finishWorkspaceDrag);
-        handle.addEventListener('mousedown', (ev)=> ev.stopPropagation());
-        handle.addEventListener('touchstart', (ev)=> ev.stopPropagation(), {passive:true});
-      }
-    });
-  }
-
-  function handleDropzoneDragEnter(ev){
-    ev.preventDefault();
-    if (workspace.dropzone && ev.target !== workspace.dropzone){
-      return;
-    }
-    if (!workspace.column.classList.contains('workspace-drop-ready')){
-      return;
-    }
-    dropzoneDepth += 1;
-    setWorkspaceActive(true);
-  }
-
-  function handleDropzoneDragOver(ev){
-    ev.preventDefault();
-    if (!workspace.column.classList.contains('workspace-drop-ready')){
-      return;
-    }
-    if (ev.dataTransfer){
-      ev.dataTransfer.dropEffect = 'move';
-    }
-    setWorkspaceActive(true);
-  }
-
-  function handleDropzoneDragLeave(ev){
-    if (!workspace.column.classList.contains('workspace-drop-ready')){
-      return;
-    }
-    if (workspace.dropzone && ev.target !== workspace.dropzone){
-      return;
-    }
-    if (workspace.dropzone && ev.relatedTarget && workspace.dropzone.contains(ev.relatedTarget)){
-      return;
-    }
-    dropzoneDepth = Math.max(0, dropzoneDepth - 1);
-    if (dropzoneDepth === 0){
-      setWorkspaceActive(false);
-    }
-  }
-
-  function handleDropzoneDrop(ev){
-    ev.preventDefault();
-    dropzoneDepth = 0;
-    setWorkspaceActive(false);
-    setWorkspaceReady(false);
-    const reorderId = ev.dataTransfer.getData('text/x-workspace-id');
-    if (reorderId){
-      const ids = loadIds();
-      const from = ids.indexOf(reorderId);
-      if (from >= 0){
-        ids.splice(from,1);
-        ids.push(reorderId);
-        saveIds(ids);
-        render();
-      }
-      return;
-    }
-    let plain = (ev.dataTransfer.getData('text/plain') || '').trim();
-    if (!plain){
-      plain = (ev.dataTransfer.getData('text/x-card-id') || '').trim();
-    }
-    if (!plain){
-      return;
-    }
-    addById(plain);
-  }
-
-  function beginWorkspaceDrag(ev, card){
-    const id = ensureCardId(card);
-    if (!id || !ev.dataTransfer) return false;
-    ev.dataTransfer.effectAllowed = 'move';
-    try {
-      ev.dataTransfer.setData('text/plain', id);
-      ev.dataTransfer.setData('text/x-card-id', id);
-    } catch (err){
-      ev.dataTransfer.setData('text/plain', id);
-    }
-    setWorkspaceReady(true);
-    return true;
-  }
-
-  function finishWorkspaceDrag(){
-    setWorkspaceReady(false);
-    setWorkspaceActive(false);
-  }
-
-  function addById(id){
+  addItemFromCard(card, targetIndex){
+    if (!card) return;
+    const id = card.dataset.workspaceId;
     if (!id) return;
-    const ids = loadIds();
-    if (ids.includes(id)){
-      return;
+    this.addItemById(id, targetIndex);
+  }
+
+  addItemById(id, targetIndex){
+    const parsed = this.parseId(id);
+    if (!parsed || !this.project || parsed.project !== this.project) return;
+    if (parsed.index < 0 || parsed.index >= this.data.length) return;
+
+    const projectItems = this.getProjectItems();
+    const existing = projectItems.indexOf(id);
+    let insertIndex = typeof targetIndex === 'number' ? targetIndex : projectItems.length;
+    insertIndex = Math.max(0, Math.min(insertIndex, projectItems.length));
+
+    if (existing !== -1){
+      projectItems.splice(existing, 1);
+      if (insertIndex > existing) insertIndex -= 1;
     }
-    ids.push(id);
-    saveIds(ids);
-    render();
+
+    projectItems.splice(insertIndex, 0, id);
+    this.replaceProjectItems(projectItems);
+    this.lastAddedId = id;
+    this.render();
   }
 
-  function removeById(id){
-    const ids = loadIds().filter(x => x !== id);
-    saveIds(ids);
-    render();
+  moveItem(id, targetIndex){
+    this.addItemById(id, targetIndex);
   }
 
-  function clearAll(){
-    saveIds([]);
-    render();
+  removeItem(id){
+    const before = this.items.length;
+    this.items = this.items.filter(item => item !== id);
+    if (this.items.length !== before){
+      this.saveItems();
+      this.render();
+    }
   }
 
-  function createWorkspaceCard(id, item){
-    const card = document.createElement('div');
-    card.className = 'workspace-card file';
-    card.dataset.itemId = id;
+  handleClear(){
+    if (!this.project) return;
+    const projectItems = this.getProjectItems();
+    if (!projectItems.length) return;
+    this.replaceProjectItems([]);
+    this.render();
+  }
 
-    const header = document.createElement('div');
-    header.className = 'path';
-    header.textContent = item ? item.file : id;
-    card.appendChild(header);
+  toggleOpen(){
+    this.applyOpen(!this.open);
+  }
 
-    if (item && item.desc){
+  setupResizer(){
+    if (!this.resizer) return;
+    let active = false;
+    let startX = 0;
+    let startWidth = this.width;
+
+    const onMove = (ev) => {
+      if (!active) return;
+      const delta = startX - ev.clientX;
+      const next = this.clampWidth(startWidth + delta);
+      this.applyWidth(next, false);
+    };
+
+    const stop = (ev) => {
+      if (!active) return;
+      active = false;
+      this.resizer.releasePointerCapture?.(ev.pointerId);
+      document.body.classList.remove('workspace-resizing');
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+      this.applyWidth(this.width, true);
+    };
+
+    this.resizer.addEventListener('pointerdown', (ev) => {
+      if (!this.open) return;
+      ev.preventDefault();
+      active = true;
+      startX = ev.clientX;
+      startWidth = this.width;
+      document.body.classList.add('workspace-resizing');
+      this.resizer.setPointerCapture?.(ev.pointerId);
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', stop);
+      window.addEventListener('pointercancel', stop);
+    });
+  }
+
+  setupDropZone(){
+    if (!this.panel) return;
+
+    const onDragEnter = (ev) => {
+      if (!this.supportsDrag(ev)) return;
+      ev.preventDefault();
+      this.dropDepth += 1;
+      if (!this.open){
+        this.applyOpen(true);
+      }
+      this.panel.classList.add('is-drop-target');
+    };
+
+    const onDragOver = (ev) => {
+      if (!this.supportsDrag(ev)) return;
+      ev.preventDefault();
+      const isReorder = this.isWorkspaceDrag(ev);
+      ev.dataTransfer.dropEffect = isReorder ? 'move' : 'copy';
+      this.panel.classList.add('is-drop-target');
+      this.panel.classList.toggle('is-drop-active', isReorder);
+      this.updateDropMarker(ev);
+    };
+
+    const onDragLeave = (ev) => {
+      if (!this.supportsDrag(ev)) return;
+      this.dropDepth = Math.max(0, this.dropDepth - 1);
+      if (this.dropDepth === 0){
+        this.resetDropState();
+      }
+    };
+
+    const onDrop = (ev) => {
+      if (!this.supportsDrag(ev)) return;
+      ev.preventDefault();
+      const dropIndex = this.getDropIndex(ev);
+      if (this.isWorkspaceDrag(ev)){
+        const payload = this.safeParse(ev.dataTransfer.getData(this.WORKSPACE_MIME));
+        const id = payload?.id || payload;
+        if (id){
+          this.moveItem(id, dropIndex);
+        }
+      }else{
+        const id = ev.dataTransfer.getData(this.CARD_MIME) || ev.dataTransfer.getData('text/plain');
+        if (id){
+          this.addItemById(id, dropIndex);
+        }
+      }
+      this.resetDropState();
+    };
+
+    this.panel.addEventListener('dragenter', onDragEnter);
+    this.panel.addEventListener('dragover', onDragOver);
+    this.panel.addEventListener('dragleave', onDragLeave);
+    this.panel.addEventListener('drop', onDrop);
+  }
+
+  supportsDrag(ev){
+    const types = Array.from(ev?.dataTransfer?.types || []);
+    return types.includes(this.CARD_MIME) || types.includes(this.WORKSPACE_MIME);
+  }
+
+  isWorkspaceDrag(ev){
+    const types = Array.from(ev?.dataTransfer?.types || []);
+    return types.includes(this.WORKSPACE_MIME);
+  }
+
+  updateDropMarker(ev){
+    if (!this.list) return;
+    const items = Array.from(this.list.querySelectorAll('.workspace-item'));
+    const filtered = items.filter(item => !item.classList.contains('dragging'));
+    this.clearDropMarkers(items);
+    if (!filtered.length) return;
+
+    const index = this.getDropIndex(ev);
+    if (index <= 0){
+      filtered[0].classList.add('drop-before');
+    }else if (index >= filtered.length){
+      filtered[filtered.length - 1].classList.add('drop-after');
+    }else{
+      filtered[index].classList.add('drop-before');
+    }
+  }
+
+  clearDropMarkers(items){
+    (items || this.list?.querySelectorAll('.workspace-item')).forEach(el => {
+      el.classList.remove('drop-before', 'drop-after');
+    });
+  }
+
+  resetDropState(){
+    this.dropDepth = 0;
+    this.panel?.classList.remove('is-drop-target', 'is-drop-active');
+    this.clearDropMarkers();
+  }
+
+  getDropIndex(ev){
+    if (!this.list) return 0;
+    const items = Array.from(this.list.querySelectorAll('.workspace-item')).filter(item => !item.classList.contains('dragging'));
+    if (!items.length) return 0;
+    const y = ev.clientY;
+    for (let i = 0; i < items.length; i += 1){
+      const rect = items[i].getBoundingClientRect();
+      if (y < rect.top + rect.height / 2){
+        return i;
+      }
+    }
+    return items.length;
+  }
+
+  buildItem(id, data){
+    const item = document.createElement('div');
+    item.className = 'workspace-item';
+    item.dataset.itemId = id;
+    item.setAttribute('role', 'listitem');
+
+    if (this.lastAddedId === id){
+      item.classList.add('recent');
+    }
+
+    const grip = document.createElement('button');
+    grip.type = 'button';
+    grip.className = 'workspace-item-grip';
+    grip.setAttribute('aria-label', 'جابجایی کارت');
+    item.appendChild(grip);
+
+    const main = document.createElement('div');
+    main.className = 'workspace-item-main';
+    item.appendChild(main);
+
+    const path = document.createElement('div');
+    path.className = 'workspace-item-path';
+    path.textContent = data.file || '';
+    main.appendChild(path);
+
+    if (data.desc){
       const desc = document.createElement('div');
-      desc.className = 'desc';
-      desc.textContent = item.desc;
-      card.appendChild(desc);
+      desc.className = 'workspace-item-desc';
+      desc.textContent = data.desc;
+      main.appendChild(desc);
     }
 
-    if (item && Array.isArray(item.tags) && item.tags.length){
+    if (Array.isArray(data.tags) && data.tags.length){
       const tags = document.createElement('div');
-      tags.innerHTML = (item.tags||[]).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join(' ');
-      card.appendChild(tags);
+      tags.className = 'workspace-item-tags';
+      data.tags.forEach(tag => {
+        const span = document.createElement('span');
+        span.className = 'tag';
+        span.textContent = tag;
+        tags.appendChild(span);
+      });
+      main.appendChild(tags);
     }
 
-    const actions = document.createElement('div');
-    actions.className = 'toolbar';
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
-    removeBtn.className = 'workspace-remove';
-    removeBtn.textContent = '✖';
-    removeBtn.title = 'حذف از میز کار';
-    removeBtn.addEventListener('click', (ev)=>{
-      ev.stopPropagation();
-      removeById(id);
-    });
-    actions.appendChild(removeBtn);
-    card.appendChild(actions);
+    removeBtn.className = 'workspace-item-remove';
+    removeBtn.setAttribute('aria-label', 'حذف از میز کار');
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => this.removeItem(id));
+    item.appendChild(removeBtn);
 
-    enableReorder(card);
-    return card;
+    this.attachWorkspaceDragHandlers(item, grip, id);
+
+    return item;
   }
 
-  function enableReorder(card){
-    card.setAttribute('draggable', 'true');
-    card.addEventListener('dragstart', (ev)=>{
-      ev.dataTransfer.effectAllowed = 'move';
-      ev.dataTransfer.setData('text/x-workspace-id', card.dataset.itemId || '');
-      card.classList.add('dragging');
-    });
-    card.addEventListener('dragend', ()=>{
-      card.classList.remove('dragging');
-    });
-    card.addEventListener('dragover', (ev)=>{
+  attachWorkspaceDragHandlers(item, grip, id){
+    if (!grip) return;
+    const enable = (ev) => {
       ev.preventDefault();
-      const dragging = workspace.list.querySelector('.workspace-card.dragging');
-      if (!dragging || dragging === card) return;
-      const cards = Array.from(workspace.list.children);
-      const draggingIdx = cards.indexOf(dragging);
-      const targetIdx = cards.indexOf(card);
-      const rect = card.getBoundingClientRect();
-      const before = (ev.clientY - rect.top) < rect.height / 2;
-      if (before){
-        workspace.list.insertBefore(dragging, card);
-        rearrangeIds(draggingIdx, targetIdx);
-      } else {
-        workspace.list.insertBefore(dragging, card.nextSibling);
-        rearrangeIds(draggingIdx, targetIdx + 1);
-      }
+      item.dataset.dragReady = 'true';
+      item.draggable = true;
+      grip.setPointerCapture?.(ev.pointerId);
+    };
+    const disable = () => {
+      delete item.dataset.dragReady;
+      item.draggable = false;
+    };
+
+    grip.addEventListener('pointerdown', (ev) => {
+      enable(ev);
     });
-  }
+    grip.addEventListener('pointerup', disable);
+    grip.addEventListener('pointercancel', disable);
+    grip.addEventListener('lostpointercapture', disable);
 
-  function rearrangeIds(from, to){
-    const ids = loadIds();
-    if (from < 0 || to < 0 || from === to) return;
-    const item = ids.splice(from,1)[0];
-    const targetIndex = to > from ? to - 1 : to;
-    ids.splice(targetIndex, 0, item);
-    saveIds(ids);
-  }
-
-  function render(){
-    if (!workspace.list) return;
-    const ids = loadIds();
-    workspace.list.innerHTML = '';
-
-    const missing = [];
-    if (!ids.length){
-      workspace.list.innerHTML = '<p class="workspace-empty">برای اضافه کردن کارت، بکش و بنداز اینجا یا روی 📌 کلیک کن</p>';
-      return;
-    }
-
-    ids.forEach(id => {
-      const item = findItemById(id);
-      if (!item){
-        missing.push(id);
+    item.addEventListener('dragstart', (ev) => {
+      if (item.dataset.dragReady !== 'true'){
+        ev.preventDefault();
         return;
       }
-      const card = createWorkspaceCard(id, item);
-      workspace.list.appendChild(card);
+      disable();
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData(this.WORKSPACE_MIME, JSON.stringify({id}));
+      ev.dataTransfer.setData('text/plain', id);
+      item.classList.add('dragging');
+      this.panel.classList.add('is-drop-target', 'is-drop-active');
+      this.clearDropMarkers();
     });
 
-    if (missing.length){
-      const remaining = loadIds().filter(x => !missing.includes(x));
-      if (remaining.length !== ids.length){
-        saveIds(remaining);
-        if (!remaining.length){
-          workspace.list.innerHTML = '<p class="workspace-empty">برای اضافه کردن کارت، بکش و بنداز اینجا یا روی 📌 کلیک کن</p>';
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      this.resetDropState();
+    });
+  }
+
+  render(){
+    if (!this.initialized || !this.list) return;
+    this.list.innerHTML = '';
+
+    const projectItems = this.getProjectItems();
+    const validated = [];
+
+    projectItems.forEach(id => {
+      const parsed = this.parseId(id);
+      if (!parsed) return;
+      const row = this.data[parsed.index];
+      if (!row) return;
+      validated.push(id);
+      this.list.appendChild(this.buildItem(id, row));
+    });
+
+    if (validated.length !== projectItems.length){
+      this.replaceProjectItems(validated);
+    }
+
+    if (this.hint){
+      this.hint.style.display = validated.length ? 'none' : '';
+    }
+    if (this.clearBtn){
+      this.clearBtn.disabled = !validated.length;
+    }
+
+    this.lastAddedId = null;
+  }
+
+  getProjectItems(){
+    if (!this.project) return [];
+    return this.items.filter(id => this.isProjectItem(id));
+  }
+
+  replaceProjectItems(newProjectItems){
+    const next = [];
+    let inserted = false;
+    this.items.forEach(id => {
+      if (this.isProjectItem(id)){
+        if (!inserted){
+          newProjectItems.forEach(itemId => next.push(itemId));
+          inserted = true;
         }
+      }else{
+        next.push(id);
       }
+    });
+    if (!inserted){
+      newProjectItems.forEach(itemId => next.push(itemId));
+    }
+    this.items = next;
+    this.saveItems();
+  }
+
+  removeMissingItems(){
+    if (!this.project) return;
+    const current = this.getProjectItems();
+    const valid = current.filter(id => {
+      const parsed = this.parseId(id);
+      return parsed && parsed.project === this.project && parsed.index >= 0 && parsed.index < this.data.length;
+    });
+    if (valid.length !== current.length){
+      this.replaceProjectItems(valid);
     }
   }
-})();
+
+  composeId(project, index){
+    return `${project}|${index}`;
+  }
+
+  parseId(id){
+    if (typeof id !== 'string') return null;
+    const [project, indexStr] = id.split('|');
+    if (!project) return null;
+    const index = Number(indexStr);
+    if (!Number.isFinite(index)) return null;
+    return {project, index};
+  }
+
+  isProjectItem(id){
+    const parsed = this.parseId(id);
+    return !!(parsed && this.project && parsed.project === this.project);
+  }
+
+  loadItems(){
+    try{
+      const raw = localStorage.getItem(this.STORAGE_KEYS.items);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)){
+        return parsed.filter(item => typeof item === 'string');
+      }
+    }catch(err){
+      console.warn('Workspace: failed to read items', err);
+    }
+    return [];
+  }
+
+  saveItems(){
+    try{
+      localStorage.setItem(this.STORAGE_KEYS.items, JSON.stringify(this.items));
+    }catch(err){
+      console.warn('Workspace: failed to persist items', err);
+    }
+  }
+
+  loadWidth(){
+    const stored = Number(localStorage.getItem(this.STORAGE_KEYS.width));
+    if (Number.isFinite(stored)){
+      return this.clampWidth(stored);
+    }
+    return this.DEFAULT_WIDTH;
+  }
+
+  saveWidth(width){
+    try{
+      localStorage.setItem(this.STORAGE_KEYS.width, String(Math.round(width)));
+    }catch(err){
+      console.warn('Workspace: failed to persist width', err);
+    }
+  }
+
+  loadOpen(){
+    const stored = localStorage.getItem(this.STORAGE_KEYS.open);
+    if (stored === null) return true;
+    return stored === 'true';
+  }
+
+  saveOpen(open){
+    try{
+      localStorage.setItem(this.STORAGE_KEYS.open, open ? 'true' : 'false');
+    }catch(err){
+      console.warn('Workspace: failed to persist open state', err);
+    }
+  }
+
+  clampWidth(width){
+    const max = this.getMaxWidth();
+    return Math.min(Math.max(width, this.MIN_WIDTH), max);
+  }
+
+  getMaxWidth(){
+    return Math.max(this.MIN_WIDTH, Math.floor(window.innerWidth * 0.6));
+  }
+
+  applyWidth(width, persist = true){
+    this.width = this.clampWidth(width || this.DEFAULT_WIDTH);
+    document.body.style.setProperty('--workspace-width', `${this.width}px`);
+    if (persist){
+      this.saveWidth(this.width);
+    }
+  }
+
+  applyOpen(open, persist = true){
+    this.open = !!open;
+    document.body.classList.toggle('workspace-open', this.open);
+    this.panel?.setAttribute('aria-hidden', this.open ? 'false' : 'true');
+    this.toggle?.setAttribute('aria-expanded', this.open ? 'true' : 'false');
+    if (this.toggle){
+      this.toggle.textContent = this.open ? '❯' : '❮';
+      this.toggle.setAttribute('aria-label', this.open ? 'بستن میز کار' : 'باز کردن میز کار');
+    }
+    if (persist){
+      this.saveOpen(this.open);
+    }
+  }
+
+  handleWindowResize(){
+    const max = this.getMaxWidth();
+    if (this.width > max){
+      this.applyWidth(max, true);
+    }
+  }
+
+  safeParse(raw){
+    try{
+      return JSON.parse(raw);
+    }catch(_err){
+      return null;
+    }
+  }
+}
+
+window.Workspace = new WorkspaceManager();
