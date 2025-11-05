@@ -93,18 +93,19 @@
   </div>
 </div>
 
-<aside id="workspacePanel" class="workspace-panel" aria-label="میز کار" aria-hidden="true">
-  <div id="workspaceResizer" class="workspace-resizer" role="separator" aria-orientation="vertical" aria-hidden="true"></div>
-  <div class="workspace-shell">
-    <header class="workspace-header">
-      <h3 class="workspace-title">میز کار</h3>
-      <button id="workspaceClear" type="button" class="btn ghost workspace-clear">یک‌کَن</button>
-    </header>
-    <p id="workspaceHint" class="workspace-hint">برای اضافه کردن کارت، بکش و بنداز اینجا</p>
-    <div id="workspaceList" class="workspace-list" role="list" aria-live="polite" aria-label="آیتم‌های میز کار"></div>
-  </div>
+<!-- Workspace (right dock) -->
+<aside id="workspace" class="ws is-closed" aria-label="Workspace" data-open="false" style="--wsw: 360px;">
+  <button id="ws-toggle" class="ws-toggle" aria-expanded="false" title="میز کار">
+    <span class="ws-toggle-icon">«</span>
+  </button>
+  <div class="ws-resizer" role="separator" aria-orientation="vertical"></div>
+  <header class="ws-header">
+    <h3>میز کار</h3>
+    <button id="ws-clear" class="ws-clear">پاک کردن</button>
+  </header>
+  <div id="ws-list" class="ws-list" aria-live="polite"></div>
+  <p class="ws-hint">برای اضافه کردن کارت، بکش و بنداز اینجا.</p>
 </aside>
-<button id="workspaceToggle" class="workspace-toggle" aria-controls="workspacePanel" aria-expanded="false" aria-label="باز کردن میز کار">❮</button>
 
 <script defer src="/static/editor.js"></script>
 <script defer src="/static/app.js"></script>
