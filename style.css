@@ -25,7 +25,7 @@ textarea{min-height:84px;resize:vertical}
 .chip.active{background:var(--brand);border-color:var(--brand)}
 .muted{color:var(--muted);font-size:12px}
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px}
-.file{position:relative;padding:12px;border:2px solid var(--border);border-radius:12px;background:#0e1016;margin-bottom:10px;cursor:grab}
+.file{position:relative;padding:12px;border:2.5px solid var(--border);border-radius:12px;background:#0e1016;margin-bottom:10px;cursor:grab;transition:border-color .2s ease, box-shadow .2s ease}
 .file:active{cursor:grabbing}
 .file .path{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans Mono", monospace;font-size:12px;color:#c4d2ff}
 .file .desc{color:var(--muted);margin-top:4px;font-size:13px}
@@ -73,7 +73,7 @@ textarea{min-height:84px;resize:vertical}
 body.ws-ready{--ws-width:360px;transition:padding-inline-end .24s ease}
 body.ws-open{padding-inline-end:var(--ws-width)}
 body.ws-collapsed{padding-inline-end:0}
-body.ws-dragging{user-select:none}
+body.ws-dragging,body.ws-dragging *{user-select:none!important}
 
 .workspace-drawer{
   position:fixed;
@@ -81,8 +81,8 @@ body.ws-dragging{user-select:none}
   top:0;
   height:100vh;
   width:var(--ws-width);
-  min-width:260px;
-  max-width:640px;
+  min-width:280px;
+  max-width:45vw;
   background:var(--panel);
   border-inline-start:1px solid var(--border);
   box-shadow:-8px 0 24px rgba(0,0,0,.45);
@@ -102,6 +102,17 @@ body.ws-collapsed .workspace-drawer{transform:translateX(100%);pointer-events:no
   cursor:col-resize;
   touch-action:none;
   z-index:1;
+}
+.ws-resizer::after{
+  content:"";
+  position:absolute;
+  top:50%;
+  inset-inline-start:4px;
+  width:2px;
+  height:48px;
+  background:linear-gradient(180deg, rgba(230,233,238,.18), rgba(230,233,238,.04));
+  border-radius:999px;
+  transform:translateY(-50%);
 }
 body.ws-collapsed .ws-resizer{display:none}
 
@@ -132,6 +143,7 @@ body.ws-collapsed .ws-resizer{display:none}
   position:relative;
   padding-inline-end:2px;
 }
+.workspace-items[aria-live]{outline:none}
 .workspace-items::before{
   content:"";
   position:absolute;
