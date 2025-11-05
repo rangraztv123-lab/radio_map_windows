@@ -90,7 +90,7 @@ editCancel.addEventListener('click', closeEditModal);
   const WIDTH_KEY = 'workspace:width';
   const COLLAPSED_KEY = 'workspace:collapsed';
   const MIN_WIDTH = 260;
-  const MAX_WIDTH_RATIO = 0.4;
+  const MAX_WIDTH_RATIO = 0.45;
   const DEFAULT_WIDTH = 320;
   const resultsContainer = document.getElementById('results');
   const workspace = {
@@ -98,11 +98,14 @@ editCancel.addEventListener('click', closeEditModal);
     clearBtn: document.getElementById('workspace-clear'),
     column: document.getElementById('workspace'),
     splitter: document.getElementById('workspace-splitter'),
+    dropzone: document.getElementById('workspace-dropzone'),
     toggleBtn: document.getElementById('workspace-toggle')
   };
 
   let currentWidth = DEFAULT_WIDTH;
   let isCollapsed = false;
+  let dropzoneDepth = 0;
+  let globalDragListenersAttached = false;
 
   if (!workspace.list || !workspace.column) {
     return;
@@ -148,12 +151,20 @@ editCancel.addEventListener('click', closeEditModal);
     localStorage.setItem(COLLAPSED_KEY, state ? 'true' : 'false');
   }
 
+  function updateBodyPadding(){
+    if (isCollapsed){
+      document.body.classList.remove('workspace-padding');
+      document.body.style.paddingRight = '0px';
+    } else {
+      document.body.classList.add('workspace-padding');
+      document.body.style.paddingRight = `${currentWidth}px`;
+    }
+  }
+
   function applyWidth(width, persist = false){
     currentWidth = clampWidth(width);
     document.body.style.setProperty('--workspace-width', `${currentWidth}px`);
-    if (!isCollapsed){
-      document.body.classList.add('workspace-padding');
-    }
+    updateBodyPadding();
     if (workspace.splitter){
       workspace.splitter.setAttribute('aria-valuenow', String(currentWidth));
       workspace.splitter.setAttribute('aria-valuemin', String(MIN_WIDTH));
@@ -175,6 +186,7 @@ editCancel.addEventListener('click', closeEditModal);
       workspace.splitter.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
       workspace.splitter.tabIndex = collapsed ? -1 : 0;
     }
+    updateBodyPadding();
     if (workspace.toggleBtn){
       workspace.toggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       workspace.toggleBtn.setAttribute('aria-label', collapsed ? 'نمایش میز کار' : 'جمع کردن میز کار');
@@ -183,6 +195,39 @@ editCancel.addEventListener('click', closeEditModal);
       if (icon){
         icon.textContent = collapsed ? '⮞' : '⮜';
       }
+    }
+    if (workspace.dropzone){
+      workspace.dropzone.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+      workspace.dropzone.tabIndex = collapsed ? -1 : 0;
+    }
+  }
+
+  function setWorkspaceReady(state){
+    if (!workspace.column) return;
+    if (isCollapsed){
+      state = false;
+    }
+    if (!state){
+      workspace.column.classList.remove('workspace-drop-active');
+      if (workspace.dropzone){
+        workspace.dropzone.classList.remove('is-dragover');
+      }
+      dropzoneDepth = 0;
+    }
+    workspace.column.classList.toggle('workspace-drop-ready', state);
+  }
+
+  function setWorkspaceActive(state){
+    if (!workspace.column) return;
+    if (isCollapsed){
+      state = false;
+    }
+    workspace.column.classList.toggle('workspace-drop-active', state);
+    if (workspace.dropzone){
+      workspace.dropzone.classList.toggle('is-dragover', state);
+    }
+    if (!state){
+      dropzoneDepth = 0;
     }
   }
 
@@ -205,6 +250,12 @@ editCancel.addEventListener('click', closeEditModal);
     }
 
     window.addEventListener('resize', handleWindowResize);
+
+    if (!globalDragListenersAttached){
+      document.addEventListener('dragend', finishWorkspaceDrag, true);
+      document.addEventListener('drop', finishWorkspaceDrag, true);
+      globalDragListenersAttached = true;
+    }
   }
 
   function startResize(ev){
@@ -218,11 +269,17 @@ editCancel.addEventListener('click', closeEditModal);
     const endEvent = isTouch ? 'touchend' : 'mouseup';
     const cancelEvent = isTouch ? 'touchcancel' : 'mouseleave';
 
+    const startPoint = isTouch ? (ev.touches && ev.touches[0] ? ev.touches[0].clientX : null) : ev.clientX;
+    if (startPoint == null) return;
+    const startWidth = currentWidth;
+
     const moveHandler = (event)=>{
       const point = isTouch ? (event.touches && event.touches[0] ? event.touches[0].clientX : null) : event.clientX;
       if (point == null) return;
       if (isTouch) event.preventDefault();
-      updateWidthFromPointer(point, true);
+      const delta = startPoint - point;
+      const newWidth = clampWidth(startWidth + delta);
+      applyWidth(newWidth, false);
     };
 
     const finishHandler = (event)=>{
@@ -243,15 +300,6 @@ editCancel.addEventListener('click', closeEditModal);
     document.addEventListener(moveEvent, moveHandler, {passive:!isTouch});
     document.addEventListener(endEvent, finishHandler);
     document.addEventListener(cancelEvent, finishHandler);
-  }
-
-  function updateWidthFromPointer(clientX, immediate){
-    const viewport = window.innerWidth || 0;
-    const newWidth = clampWidth(viewport - clientX);
-    applyWidth(newWidth, false);
-    if (!immediate){
-      saveStoredWidth(newWidth);
-    }
   }
 
   function handleSplitterKeydown(ev){
@@ -298,10 +346,6 @@ editCancel.addEventListener('click', closeEditModal);
     const map = readStorage();
     map[getProjectKey()] = ids;
     writeStorage(map);
-  }
-
-  function uniq(arr){
-    return Array.from(new Set(arr));
   }
 
   function hash32(str){
@@ -369,9 +413,12 @@ editCancel.addEventListener('click', closeEditModal);
   }
 
   function init(){
-    workspace.list.addEventListener('dragover', handleListDragOver);
-    workspace.list.addEventListener('dragleave', () => workspace.list.classList.remove('workspace-dropzone'));
-    workspace.list.addEventListener('drop', handleListDrop);
+    if (workspace.dropzone){
+      workspace.dropzone.addEventListener('dragenter', handleDropzoneDragEnter);
+      workspace.dropzone.addEventListener('dragover', handleDropzoneDragOver);
+      workspace.dropzone.addEventListener('dragleave', handleDropzoneDragLeave);
+      workspace.dropzone.addEventListener('drop', handleDropzoneDrop);
+    }
 
     if (workspace.clearBtn){
       workspace.clearBtn.addEventListener('click', () => {
@@ -381,11 +428,9 @@ editCancel.addEventListener('click', closeEditModal);
       });
     }
 
-    injectPinButtons();
-    makeCardsDraggable();
-    render();
-
     if (resultsContainer){
+      resultsContainer.setAttribute('draggable', 'false');
+      resultsContainer.draggable = false;
       const observer = new MutationObserver(()=>{
         ensureCardIds();
         injectPinButtons();
@@ -394,6 +439,10 @@ editCancel.addEventListener('click', closeEditModal);
       });
       observer.observe(resultsContainer, {childList:true, subtree:true});
     }
+
+    injectPinButtons();
+    makeCardsDraggable();
+    render();
   }
 
   function ensureCardIds(){
@@ -414,6 +463,7 @@ editCancel.addEventListener('click', closeEditModal);
       btn.type = 'button';
       btn.className = 'btn ghost pin-to-workspace';
       btn.title = 'افزودن به میز کار';
+      btn.setAttribute('aria-label', 'افزودن به میز کار');
       btn.textContent = '📌';
       btn.addEventListener('click', (ev)=>{
         ev.stopPropagation();
@@ -424,10 +474,12 @@ editCancel.addEventListener('click', closeEditModal);
   }
 
   function makeCardsDraggable(){
+    const interactiveSelector = 'button, .btn, a, input, textarea, select, label, .pin-to-workspace';
     getResultCards().forEach(card => {
       ensureCardId(card);
       card.classList.add('has-drag-handle');
-      card.setAttribute('draggable', 'false');
+      card.setAttribute('draggable', 'true');
+      card.draggable = true;
 
       let handle = card.querySelector('.drag-handle');
       if (!handle){
@@ -448,29 +500,93 @@ editCancel.addEventListener('click', closeEditModal);
         }
       });
 
+      if (!card.dataset.workspaceSurface){
+        card.dataset.workspaceSurface = '1';
+        let pointerDownTarget = null;
+        const rememberPointer = (target)=>{ pointerDownTarget = target; };
+        const resetPointer = ()=>{ pointerDownTarget = null; };
+        card.addEventListener('mousedown', (ev)=> rememberPointer(ev.target));
+        card.addEventListener('touchstart', (ev)=> rememberPointer(ev.target), {passive:true});
+        card.addEventListener('mouseup', resetPointer);
+        card.addEventListener('mouseleave', resetPointer);
+        card.addEventListener('touchend', resetPointer);
+        card.addEventListener('touchcancel', resetPointer);
+
+        card.addEventListener('dragstart', (ev)=>{
+          if (ev.target !== card) return;
+          const origin = pointerDownTarget || ev.target;
+          if (origin && origin.closest && origin.closest(interactiveSelector)){
+            ev.preventDefault();
+            finishWorkspaceDrag();
+            return;
+          }
+          if (!beginWorkspaceDrag(ev, card)){
+            ev.preventDefault();
+          }
+          pointerDownTarget = null;
+        });
+        card.addEventListener('dragend', finishWorkspaceDrag);
+      }
+
       if (!handle.dataset.workspaceHandle){
         handle.dataset.workspaceHandle = '1';
         handle.addEventListener('dragstart', (ev)=>{
-          const id = ensureCardId(card);
           ev.stopPropagation();
-          ev.dataTransfer.effectAllowed = 'copy';
-          ev.dataTransfer.setData('text/x-card-id', id);
-          ev.dataTransfer.setData('text/plain', id);
+          if (!beginWorkspaceDrag(ev, card)){
+            ev.preventDefault();
+          }
         });
+        handle.addEventListener('dragend', finishWorkspaceDrag);
         handle.addEventListener('mousedown', (ev)=> ev.stopPropagation());
         handle.addEventListener('touchstart', (ev)=> ev.stopPropagation(), {passive:true});
       }
     });
   }
 
-  function handleListDragOver(ev){
+  function handleDropzoneDragEnter(ev){
     ev.preventDefault();
-    workspace.list.classList.add('workspace-dropzone');
+    if (workspace.dropzone && ev.target !== workspace.dropzone){
+      return;
+    }
+    if (!workspace.column.classList.contains('workspace-drop-ready')){
+      return;
+    }
+    dropzoneDepth += 1;
+    setWorkspaceActive(true);
   }
 
-  function handleListDrop(ev){
+  function handleDropzoneDragOver(ev){
     ev.preventDefault();
-    workspace.list.classList.remove('workspace-dropzone');
+    if (!workspace.column.classList.contains('workspace-drop-ready')){
+      return;
+    }
+    if (ev.dataTransfer){
+      ev.dataTransfer.dropEffect = 'move';
+    }
+    setWorkspaceActive(true);
+  }
+
+  function handleDropzoneDragLeave(ev){
+    if (!workspace.column.classList.contains('workspace-drop-ready')){
+      return;
+    }
+    if (workspace.dropzone && ev.target !== workspace.dropzone){
+      return;
+    }
+    if (workspace.dropzone && ev.relatedTarget && workspace.dropzone.contains(ev.relatedTarget)){
+      return;
+    }
+    dropzoneDepth = Math.max(0, dropzoneDepth - 1);
+    if (dropzoneDepth === 0){
+      setWorkspaceActive(false);
+    }
+  }
+
+  function handleDropzoneDrop(ev){
+    ev.preventDefault();
+    dropzoneDepth = 0;
+    setWorkspaceActive(false);
+    setWorkspaceReady(false);
     const reorderId = ev.dataTransfer.getData('text/x-workspace-id');
     if (reorderId){
       const ids = loadIds();
@@ -483,14 +599,42 @@ editCancel.addEventListener('click', closeEditModal);
       }
       return;
     }
-    const id = ev.dataTransfer.getData('text/x-card-id');
-    if (id){
-      addById(id);
+    let plain = (ev.dataTransfer.getData('text/plain') || '').trim();
+    if (!plain){
+      plain = (ev.dataTransfer.getData('text/x-card-id') || '').trim();
     }
+    if (!plain){
+      return;
+    }
+    addById(plain);
+  }
+
+  function beginWorkspaceDrag(ev, card){
+    const id = ensureCardId(card);
+    if (!id || !ev.dataTransfer) return false;
+    ev.dataTransfer.effectAllowed = 'move';
+    try {
+      ev.dataTransfer.setData('text/plain', id);
+      ev.dataTransfer.setData('text/x-card-id', id);
+    } catch (err){
+      ev.dataTransfer.setData('text/plain', id);
+    }
+    setWorkspaceReady(true);
+    return true;
+  }
+
+  function finishWorkspaceDrag(){
+    setWorkspaceReady(false);
+    setWorkspaceActive(false);
   }
 
   function addById(id){
-    const ids = uniq(loadIds().concat(id));
+    if (!id) return;
+    const ids = loadIds();
+    if (ids.includes(id)){
+      return;
+    }
+    ids.push(id);
     saveIds(ids);
     render();
   }

@@ -10,7 +10,8 @@ header{position:sticky;top:0;background:linear-gradient(180deg, #0b0c10, rgba(11
 h1{font-size:20px;margin:0}
 .row{display:grid;gap:18px}
 @media(min-width:900px){ .row{grid-template-columns:1.2fr .8fr} }
-.card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:16px}
+.card{background:var(--panel);border:2px solid var(--border);border-radius:16px;padding:16px;transition:box-shadow .2s ease,border-color .2s ease}
+.card:hover{box-shadow:0 10px 28px rgba(0,0,0,.35)}
 .title{margin:0 0 12px;color:#bcd2ff}
 input,textarea,select{width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);outline:none}
 textarea{min-height:84px;resize:vertical}
@@ -24,7 +25,9 @@ textarea{min-height:84px;resize:vertical}
 .chip.active{background:var(--brand);border-color:var(--brand)}
 .muted{color:var(--muted);font-size:12px}
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px}
-.file{padding:12px;border:1px solid var(--border);border-radius:12px;background:#0e1016;margin-bottom:10px}
+.file{padding:12px;border:2px solid var(--border);border-radius:12px;background:#0e1016;margin-bottom:10px;cursor:grab;transition:box-shadow .2s ease,border-color .2s ease}
+.file:hover{box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.file:active{cursor:grabbing}
 .file .path{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans Mono", monospace;font-size:12px;color:#c4d2ff}
 .file .desc{color:var(--muted);margin-top:4px;font-size:13px}
 .tag{display:inline-block;margin:6px 6px 0 0;padding:2px 8px;border-radius:999px;background:#151a24;border:1px solid #263245;font-size:12px}
@@ -79,7 +82,7 @@ body.workspace-resizing{
   height:100vh;
   width:var(--workspace-width);
   min-width:260px;
-  max-width:40vw;
+  max-width:45vw;
   background:var(--panel);
   border-left:1px solid var(--border);
   padding:16px 18px;
@@ -121,6 +124,52 @@ body.workspace-collapsed #workspace-splitter{
 body.workspace-resizing #workspace-splitter,
 #workspace-splitter:hover{
   background:linear-gradient(180deg, rgba(43,97,209,0.28), rgba(43,97,209,0.12));
+}
+
+#workspace-dropzone.workspace-dropzone-area:focus-visible{
+  outline:2px solid var(--brand);
+  outline-offset:4px;
+}
+
+#workspace-dropzone{
+  display:flex;
+  flex-direction:column;
+  position:relative;
+  gap:12px;
+  min-height:calc(100vh - 120px);
+}
+
+.workspace-dropzone-area::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:12px;
+  pointer-events:none;
+  border:2px dashed transparent;
+  transition:border-color .2s ease, box-shadow .2s ease;
+}
+
+.workspace-column.workspace-drop-ready .workspace-dropzone-area::before{
+  border-color:rgba(43,97,209,.35);
+  box-shadow:0 0 0 2px rgba(43,97,209,.25);
+}
+
+.workspace-column.workspace-drop-active .workspace-dropzone-area::before{
+  border-color:rgba(32,201,151,.55);
+  box-shadow:0 0 0 3px rgba(32,201,151,.35);
+}
+
+.workspace-dropzone-area{
+  position:relative;
+  min-height:100%;
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-start;
+}
+
+.workspace-dropzone-area.is-dragover::before{
+  border-color:rgba(32,201,151,.55);
+  box-shadow:0 0 0 3px rgba(32,201,151,.35);
 }
 
 .workspace-header{
@@ -184,6 +233,7 @@ body.workspace-resizing #workspace-splitter,
   display:flex;
   flex-direction:column;
   gap:12px;
+  position:relative;
 }
 
 .workspace-card{
@@ -203,11 +253,6 @@ body.workspace-resizing #workspace-splitter,
   color:var(--muted);
   font-size:13px;
   margin:16px 0;
-}
-
-.workspace-dropzone{
-  outline:2px dashed rgba(255,255,255,.2);
-  outline-offset:6px;
 }
 
 .workspace-remove{
@@ -234,6 +279,7 @@ body.workspace-resizing #workspace-splitter,
   color:var(--text);
   cursor:pointer;
   margin-inline-start:6px;
+  transition:background .2s ease,border-color .2s ease;
 }
 .pin-to-workspace:hover{
   background:rgba(255,255,255,0.04);
@@ -247,11 +293,6 @@ img,
 .drag-handle{
   -webkit-user-drag:none;
   user-select:none;
-}
-
-#results .file.has-drag-handle{
-  position:relative;
-  padding-top:42px;
 }
 
 #results .drag-handle{
@@ -272,6 +313,11 @@ img,
   box-shadow:0 4px 10px rgba(0,0,0,0.2);
 }
 
+#results .file.has-drag-handle{
+  position:relative;
+  padding-top:42px;
+}
+
 #results .drag-handle:active{
   cursor:grabbing;
 }
@@ -279,4 +325,25 @@ img,
 #results .drag-handle:focus-visible{
   outline:2px solid var(--brand);
   outline-offset:2px;
+}
+
+#results .file.has-drag-handle{
+  cursor:grab;
+}
+
+.workspace-column.workspace-drop-ready{
+  border-left-color:rgba(43,97,209,0.6);
+}
+
+.workspace-column.workspace-drop-active{
+  border-left-color:rgba(32,201,151,0.8);
+}
+
+body.workspace-resizing::after{
+  content:"";
+  position:fixed;
+  inset:0;
+  background:rgba(11,12,16,0.05);
+  pointer-events:none;
+  z-index:200;
 }
