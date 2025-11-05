@@ -93,22 +93,17 @@
   </div>
 </div>
 
-<!-- Workspace Lane -->
-<div id="workspace-splitter" role="separator" aria-orientation="vertical" aria-label="تغییر عرض میز کار" tabindex="0"></div>
-<aside id="workspace" class="workspace-column" aria-label="Workspace">
-  <div class="workspace-header">
-    <h3>🧩 میز کار</h3>
-    <div class="workspace-actions">
-      <button id="workspace-toggle" class="workspace-toggle" type="button" aria-expanded="true" aria-label="جمع کردن میز کار" title="جمع کردن میز کار"><span aria-hidden="true">⮜</span></button>
-      <button id="workspace-clear" class="workspace-clear" type="button" title="پاک کردن همه">پاک کردن</button>
-    </div>
-  </div>
-  <div id="workspace-dropzone" class="workspace-dropzone-area" aria-label="محوطه رها کردن کارت‌ها" tabindex="0">
-    <div id="workspace-list" class="workspace-list" aria-live="polite">
-      <p class="workspace-empty">برای اضافه کردن کارت، بکش و بنداز اینجا یا روی 📌 کلیک کن</p>
-    </div>
-  </div>
+<aside id="workspacePanel" class="ws ws--closed" data-role="workspace" aria-label="Workspace">
+  <div id="workspaceResizer" class="ws__resizer" aria-hidden="true"></div>
+  <header class="ws__head">
+    <span class="ws__title">میز کار</span>
+    <button id="workspaceClear" class="ws__clear" type="button">یک‌کَن</button>
+  </header>
+  <div id="workspaceHint" class="ws__hint">برای اضافه کردن کارت، بکش و بنداز اینجا</div>
+  <div id="workspaceList" class="ws__list" aria-live="polite"></div>
 </aside>
+
+<button id="workspaceToggle" class="ws-toggle" aria-controls="workspacePanel" aria-expanded="false">〈</button>
 
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 <script src="{{ url_for('static', filename='editor.js') }}"></script>
