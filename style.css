@@ -53,3 +53,78 @@ textarea{min-height:84px;resize:vertical}
 .badge.used{border-color:#2e4eff;background:#0f1530;color:#cdd7ff}
 
 .file.rm-hover{outline:3px dashed #6aa1ff; outline-offset:3px;}
+
+/* ==== Workspace (right column) ==== */
+body.workspace-padding {
+  padding-right: 320px; /* make room for fixed workspace; keeps look intact */
+}
+
+.workspace-column {
+  position: fixed;
+  right: 0;
+  top: 0;
+  height: 100vh;
+  width: 320px;
+  max-width: 35vw;
+  min-width: 280px;
+  background-color: var(--bg-secondary, #111);
+  border-left: 1px solid rgba(255,255,255,0.07);
+  padding: 10px 12px;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.workspace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+#workspace-clear {
+  background: #222;
+  color: #eee;
+  border: 1px solid #444;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+#workspace-clear:hover { background: #333; }
+
+.workspace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workspace-card {
+  background-color: #1a1a1a;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 10px;
+  cursor: move;
+}
+
+.workspace-empty {
+  text-align: center;
+  opacity: 0.6;
+  font-size: 13px;
+  margin: 14px 0;
+}
+
+.workspace-dropzone {
+  outline: 2px dashed rgba(255,255,255,0.25);
+  border-radius: 10px;
+  min-height: 42px;
+}
+
+.pin-to-workspace {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #ddd;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-inline-start: 6px;
+}
+.pin-to-workspace:hover { background: rgba(255,255,255,0.06); }
