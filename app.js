@@ -44,6 +44,556 @@ const showUsedBtn = $('showUsedBtn');
 const elAddTagChips = () => $('addTagChips');
 const elAddTagHints = () => $('addTagHints');
 
+const Workspace = (() => {
+  const WIDTH_KEY = 'workspace:width';
+  const COLLAPSE_KEY = 'workspace:collapsed';
+  const ITEMS_KEY_PREFIX = 'workspace:items:';
+  const DEFAULT_WIDTH = 360;
+  const MIN_WIDTH = 260;
+  const MAX_WIDTH = 640;
+
+  let drawer;
+  let resizer;
+  let list;
+  let collapseBtn;
+  let clearBtn;
+  let confirmWrap;
+  let confirmYes;
+  let confirmNo;
+  let toggleTab;
+  let content;
+
+  let currentWidth = DEFAULT_WIDTH;
+  let collapsed = false;
+  let initialized = false;
+  let projectKey = '__default__';
+  let items = [];
+
+  function init(){
+    drawer = document.getElementById('workspaceDrawer');
+    if (!drawer) return;
+    resizer = document.getElementById('workspaceResizer');
+    list = document.getElementById('workspaceItems');
+    collapseBtn = document.getElementById('workspaceCollapse');
+    clearBtn = document.getElementById('workspaceClear');
+    confirmWrap = document.getElementById('workspaceClearConfirm');
+    confirmYes = document.getElementById('workspaceConfirmYes');
+    confirmNo = document.getElementById('workspaceConfirmNo');
+    toggleTab = document.getElementById('wsToggleTab');
+    content = document.getElementById('workspaceContent');
+
+    document.body.classList.add('ws-ready');
+
+    currentWidth = readStoredWidth();
+    applyWidth(currentWidth, false);
+    applyCollapsed(readStoredCollapsed(), false);
+
+    items = readStoredItems();
+    renderWorkspaceItems();
+
+    collapseBtn?.addEventListener('click', () => setCollapsed(!collapsed, true));
+    toggleTab?.addEventListener('click', () => setCollapsed(false, true));
+
+    clearBtn?.addEventListener('click', showClearConfirm);
+    confirmYes?.addEventListener('click', () => {
+      items = [];
+      persistItems();
+      renderWorkspaceItems();
+      hideClearConfirm();
+    });
+    confirmNo?.addEventListener('click', hideClearConfirm);
+
+    if (resizer){
+      resizer.addEventListener('mousedown', startResize);
+      resizer.addEventListener('touchstart', startResize, {passive:false});
+    }
+    window.addEventListener('resize', handleResize);
+
+    setupDropZone();
+
+    initialized = true;
+    refreshWorkspaceView();
+  }
+
+  function clampWidth(px){
+    const maxAllowed = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, window.innerWidth - 120));
+    return Math.min(Math.max(px, MIN_WIDTH), maxAllowed);
+  }
+
+  function readStoredWidth(){
+    const stored = parseInt(localStorage.getItem(WIDTH_KEY), 10);
+    if (Number.isFinite(stored)){
+      return clampWidth(stored);
+    }
+    return DEFAULT_WIDTH;
+  }
+
+  function saveStoredWidth(){
+    localStorage.setItem(WIDTH_KEY, String(Math.round(currentWidth)));
+  }
+
+  function readStoredCollapsed(){
+    const stored = localStorage.getItem(COLLAPSE_KEY);
+    if (stored === null){
+      return window.innerWidth <= 1024;
+    }
+    return stored === 'true';
+  }
+
+  function saveStoredCollapsed(){
+    localStorage.setItem(COLLAPSE_KEY, collapsed ? 'true' : 'false');
+  }
+
+  function readStoredItems(){
+    const key = ITEMS_KEY_PREFIX + projectKey;
+    try{
+      const raw = localStorage.getItem(key);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    }catch(err){
+      return [];
+    }
+  }
+
+  function persistItems(){
+    const key = ITEMS_KEY_PREFIX + projectKey;
+    localStorage.setItem(key, JSON.stringify(items));
+  }
+
+  function applyWidth(width, persist=true){
+    currentWidth = clampWidth(width);
+    document.body.style.setProperty('--ws-width', `${currentWidth}px`);
+    if (drawer){
+      drawer.style.width = `${currentWidth}px`;
+    }
+    if (!collapsed){
+      document.body.classList.add('ws-open');
+    }
+    if (persist){
+      saveStoredWidth();
+    }
+  }
+
+  function applyCollapsed(state, persist=true){
+    collapsed = !!state;
+    document.body.classList.toggle('ws-collapsed', collapsed);
+    document.body.classList.toggle('ws-open', !collapsed);
+    drawer?.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+    if (collapseBtn){
+      collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      collapseBtn.textContent = collapsed ? '⮜' : '⮞';
+      const label = collapsed ? 'باز کردن میز کار' : 'جمع کردن میز کار';
+      collapseBtn.setAttribute('aria-label', label);
+      collapseBtn.title = label;
+    }
+    if (toggleTab){
+      toggleTab.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      const icon = toggleTab.querySelector('span');
+      if (icon){
+        icon.textContent = collapsed ? '⮜' : '⮞';
+      }
+      toggleTab.title = collapsed ? 'باز کردن میز کار' : 'جمع کردن میز کار';
+    }
+    if (persist){
+      saveStoredCollapsed();
+    }
+  }
+
+  function setCollapsed(state, persist=true){
+    if (state === collapsed) return;
+    applyCollapsed(state, persist);
+  }
+
+  function startResize(ev){
+    if (collapsed) return;
+    const startX = getClientX(ev);
+    if (startX == null) return;
+    ev.preventDefault();
+    document.body.classList.add('ws-dragging');
+    const startWidth = currentWidth;
+
+    const move = (event)=>{
+      const point = getClientX(event);
+      if (point == null) return;
+      if (event.type === 'touchmove'){ event.preventDefault(); }
+      const delta = startX - point;
+      applyWidth(startWidth + delta, false);
+    };
+
+    const stop = ()=>{
+      document.body.classList.remove('ws-dragging');
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('touchmove', move);
+      document.removeEventListener('mouseup', stop);
+      document.removeEventListener('touchend', stop);
+      saveStoredWidth();
+    };
+
+    document.addEventListener('mousemove', move);
+    document.addEventListener('touchmove', move, {passive:false});
+    document.addEventListener('mouseup', stop);
+    document.addEventListener('touchend', stop);
+  }
+
+  function getClientX(event){
+    if (event.touches && event.touches[0]){
+      return event.touches[0].clientX;
+    }
+    if (event.changedTouches && event.changedTouches[0]){
+      return event.changedTouches[0].clientX;
+    }
+    return event.clientX ?? null;
+  }
+
+  function handleResize(){
+    const clamped = clampWidth(currentWidth);
+    applyWidth(clamped, clamped !== currentWidth);
+  }
+
+  function setupDropZone(){
+    if (!content) return;
+    ['dragenter','dragover','dragleave','drop'].forEach(evt => {
+      content.addEventListener(evt, handleDropEvents);
+    });
+  }
+
+  function handleDropEvents(ev){
+    if (!ev.dataTransfer) return;
+    const types = Array.from(ev.dataTransfer.types || []);
+    const hasCard = types.includes('text/x-card-id');
+    const hasWorkspaceItem = types.includes('text/x-workspace-item');
+    if (!hasCard && !hasWorkspaceItem) return;
+    if (collapsed){
+      setCollapsed(false, true);
+    }
+
+    if (ev.type === 'dragenter'){
+      ev.preventDefault();
+      drawer?.classList.add('ws-drop-ready');
+      return;
+    }
+
+    if (ev.type === 'dragover'){
+      ev.preventDefault();
+      if (hasWorkspaceItem){
+        ev.dataTransfer.dropEffect = 'move';
+        reorderDuringDrag(ev);
+      }else{
+        ev.dataTransfer.dropEffect = 'copy';
+      }
+      drawer?.classList.add('ws-drop-active');
+      return;
+    }
+
+    if (ev.type === 'dragleave'){
+      if (!content.contains(ev.relatedTarget)){
+        clearDropVisuals();
+      }
+      return;
+    }
+
+    if (ev.type === 'drop'){
+      ev.preventDefault();
+      clearDropVisuals();
+      const workspaceId = ev.dataTransfer.getData('text/x-workspace-item');
+      if (workspaceId){
+        commitReorder();
+        return;
+      }
+      const cardId = ev.dataTransfer.getData('text/x-card-id');
+      if (!cardId) return;
+      const insertIndex = determineInsertIndex(ev.clientY);
+      addItem(cardId, insertIndex);
+    }
+  }
+
+  function clearDropVisuals(){
+    drawer?.classList.remove('ws-drop-ready');
+    drawer?.classList.remove('ws-drop-active');
+  }
+
+  function reorderDuringDrag(ev){
+    if (!list) return;
+    const dragging = list.querySelector('.workspace-item.dragging');
+    if (!dragging) return;
+    const after = getItemAfter(ev.clientY);
+    if (!after){
+      list.appendChild(dragging);
+    }else{
+      list.insertBefore(dragging, after);
+    }
+  }
+
+  function commitReorder(){
+    if (!list) return;
+    items = Array.from(list.querySelectorAll('.workspace-item')).map(el => el.dataset.cardId).filter(Boolean);
+    persistItems();
+  }
+
+  function getItemAfter(y){
+    if (!list) return null;
+    const items = Array.from(list.querySelectorAll('.workspace-item:not(.dragging)'));
+    return items.reduce((closest, child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - (box.top + box.height / 2);
+      if (offset < 0 && offset > closest.offset){
+        return {offset, element: child};
+      }
+      return closest;
+    }, {offset: Number.NEGATIVE_INFINITY, element: null}).element;
+  }
+
+  function determineInsertIndex(y){
+    if (!list) return items.length;
+    const siblings = Array.from(list.querySelectorAll('.workspace-item'));
+    if (!siblings.length) return 0;
+    const after = getItemAfter(y);
+    if (!after) return siblings.length;
+    const idx = siblings.indexOf(after);
+    return idx < 0 ? siblings.length : idx;
+  }
+
+  function showClearConfirm(){
+    if (!items.length){
+      hideClearConfirm();
+      return;
+    }
+    confirmWrap?.classList.add('show');
+    confirmWrap?.setAttribute('aria-hidden', 'false');
+  }
+
+  function hideClearConfirm(){
+    confirmWrap?.classList.remove('show');
+    confirmWrap?.setAttribute('aria-hidden', 'true');
+  }
+
+  function renderWorkspaceItems(){
+    if (!list) return;
+    list.innerHTML = '';
+    hideClearConfirm();
+    if (!items.length){
+      list.innerHTML = '<p class="workspace-empty">برای اضافه کردن کارت، بکش و بنداز اینجا یا روی 📌 کلیک کن</p>';
+      return;
+    }
+
+    const missing = [];
+    items.forEach(id => {
+      const data = findItemById(id);
+      if (!data){
+        missing.push(id);
+        return;
+      }
+      const card = createWorkspaceItem(id, data);
+      list.appendChild(card);
+    });
+
+    if (missing.length){
+      items = items.filter(id => !missing.includes(id));
+      if (missing.length){
+        persistItems();
+      }
+      if (!items.length){
+        renderWorkspaceItems();
+      }
+    }
+  }
+
+  function createWorkspaceItem(id, item){
+    const node = document.createElement('div');
+    node.className = 'workspace-item';
+    node.draggable = true;
+    node.dataset.cardId = id;
+
+    const title = document.createElement('div');
+    title.className = 'workspace-item-title';
+    title.textContent = item?.file || decodeURIComponentSafe(id);
+    node.appendChild(title);
+
+    if (item && Array.isArray(item.tags) && item.tags.length){
+      const tags = document.createElement('div');
+      tags.className = 'workspace-item-tags';
+      item.tags.forEach(tag => {
+        const span = document.createElement('span');
+        span.className = 'tag';
+        span.textContent = tag;
+        tags.appendChild(span);
+      });
+      node.appendChild(tags);
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'workspace-item-footer';
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'workspace-remove';
+    removeBtn.textContent = '✕';
+    removeBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      removeItem(id);
+    });
+    footer.appendChild(removeBtn);
+    node.appendChild(footer);
+
+    node.addEventListener('dragstart', (ev) => {
+      if (!ev.dataTransfer) return;
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/x-workspace-item', id);
+      node.classList.add('dragging');
+      document.body.classList.add('ws-dragging');
+    });
+    node.addEventListener('dragend', () => {
+      node.classList.remove('dragging');
+      document.body.classList.remove('ws-dragging');
+    });
+
+    return node;
+  }
+
+  function decodeURIComponentSafe(val){
+    try{
+      return decodeURIComponent(val);
+    }catch(err){
+      return val;
+    }
+  }
+
+  function removeItem(id){
+    const next = items.filter(itemId => itemId !== id);
+    if (next.length === items.length) return;
+    items = next;
+    persistItems();
+    renderWorkspaceItems();
+  }
+
+  function addItem(id, position){
+    if (!id) return;
+    if (items.includes(id)){
+      highlightExisting(id);
+      return;
+    }
+    if (typeof position === 'number' && position >= 0 && position <= items.length){
+      items.splice(position, 0, id);
+    }else{
+      items.push(id);
+    }
+    persistItems();
+    renderWorkspaceItems();
+    highlightExisting(id);
+  }
+
+  function highlightExisting(id){
+    if (!list) return;
+    const selector = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id.replace(/"/g, '\\"');
+    const node = list.querySelector(`[data-card-id="${selector}"]`);
+    if (!node) return;
+    node.classList.remove('pulse');
+    void node.offsetWidth;
+    node.classList.add('pulse');
+    node.scrollIntoView({block:'center', behavior:'smooth'});
+  }
+
+  function findItemById(id){
+    const file = decodeURIComponentSafe(id);
+    return (DATA || []).find(item => (item.file || '') === file) || null;
+  }
+
+  function ensureCardHandle(card){
+    if (!card.querySelector('.card-drag-handle')){
+      const handle = document.createElement('div');
+      handle.className = 'card-drag-handle';
+      card.appendChild(handle);
+    }
+  }
+
+  function registerResultCard(card, item){
+    if (!card) return;
+    const id = makeCardId(item);
+    card.dataset.cardId = id;
+    card.setAttribute('draggable', 'true');
+    ensureCardHandle(card);
+    card.querySelectorAll('button, .btn, a, input, textarea, select, label').forEach(el => {
+      el.setAttribute('draggable', 'false');
+    });
+    if (card.dataset.wsBound) return;
+    card.dataset.wsBound = '1';
+    card.addEventListener('dragstart', handleCardDragStart);
+    card.addEventListener('dragend', handleCardDragEnd);
+  }
+
+  function handleCardDragStart(ev){
+    const card = ev.currentTarget;
+    if (!card || !ev.dataTransfer) return;
+    if (ev.target && ev.target.closest && ev.target.closest('.toolbar, button, .btn, a, input, textarea, select, label')){
+      ev.preventDefault();
+      return;
+    }
+    const id = card.dataset.cardId;
+    if (!id){
+      ev.preventDefault();
+      return;
+    }
+    hideClearConfirm();
+    ev.dataTransfer.effectAllowed = 'copy';
+    try{
+      ev.dataTransfer.setData('text/x-card-id', id);
+    }catch(err){
+      /* noop */
+    }
+    card.classList.add('is-dragging');
+    document.body.classList.add('ws-dragging');
+  }
+
+  function handleCardDragEnd(ev){
+    const card = ev.currentTarget;
+    if (!card) return;
+    card.classList.remove('is-dragging');
+    document.body.classList.remove('ws-dragging');
+    clearDropVisuals();
+  }
+
+  function makeCardId(item){
+    const base = item?.file || '';
+    if (base){
+      return encodeURIComponent(base);
+    }
+    return encodeURIComponent((item?.desc || '').slice(0, 80));
+  }
+
+  function setProject(name){
+    projectKey = name ? String(name) : '__default__';
+    items = readStoredItems();
+    if (initialized){
+      renderWorkspaceItems();
+    }
+  }
+
+  function refreshWorkspaceView(){
+    if (!initialized) return;
+    renderWorkspaceItems();
+  }
+
+  function addItemFromCard(card){
+    if (!card) return;
+    const id = card.dataset.cardId;
+    if (!id) return;
+    addItem(id);
+  }
+
+  function addItemById(id){
+    addItem(id);
+  }
+
+  return {
+    init,
+    setProject,
+    registerResultCard,
+    refreshWorkspaceView,
+    addItemFromCard,
+    addItemById
+  };
+})();
+
 // ---- Projects ----
 async function loadProjects(){
   PROJECTS = await api('/api/projects');
@@ -67,6 +617,7 @@ async function loadProjectData(name, opts={keepFilters:false}){
   activeTags = opts.keepFilters ? prevFilters : [];
   ALL_TAGS = Array.from(new Set((DATA || []).flatMap(x => x.tags || []))).sort();
   tempTags = [];
+  Workspace.setProject(name);
   render();
 }
 elProject.onchange = async ()=>{
@@ -157,9 +708,11 @@ function render(){
           <button class="btn" data-edit="${orig}">ویرایش</button>
           <button class="btn danger" data-del="${orig}">حذف</button>
           <button class="btn ghost" data-cut="${orig}">کات</button>
+          <button class="btn ghost" data-pin="${orig}">📌</button>
         </div>
       `;
       elResults.appendChild(box);
+      Workspace.registerResultCard(box, f);
     });
   }
 
@@ -194,7 +747,15 @@ function render(){
     };
   });
 
-  
+  elResults.querySelectorAll('[data-pin]').forEach(btn=>{
+    btn.onclick = (ev) => {
+      ev.preventDefault();
+      const card = btn.closest('.file');
+      Workspace.addItemFromCard(card);
+    };
+  });
+
+
   // Cut-to-clipboard (Windows)
   elResults.querySelectorAll('[data-cut]').forEach(btn=>{
     btn.onclick = async () => {
@@ -231,6 +792,7 @@ document.getElementById('filterUsedBtn').onclick = ()=>{
   });
 
   renderAddTagUI();
+  Workspace.refreshWorkspaceView();
 }
 
 // ---- Tag entry (Enter + autocomplete) ----
@@ -312,3 +874,12 @@ importCsv.onchange = async (e)=>{
 
 // init
 loadProjects();
+if (typeof window !== 'undefined') {
+  window.Workspace = Workspace;
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', Workspace.init);
+} else {
+  Workspace.init();
+}

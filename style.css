@@ -11,7 +11,7 @@ header{position:sticky;top:0;background:linear-gradient(180deg, #0b0c10, rgba(11
 h1{font-size:20px;margin:0}
 .row{display:grid;gap:18px}
 @media(min-width:900px){ .row{grid-template-columns:1.2fr .8fr} }
-.card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:16px}
+.card{background:var(--panel);border:2px solid var(--border);border-radius:16px;padding:16px}
 .title{margin:0 0 12px;color:#bcd2ff}
 input,textarea,select{width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);outline:none}
 textarea{min-height:84px;resize:vertical}
@@ -25,10 +25,25 @@ textarea{min-height:84px;resize:vertical}
 .chip.active{background:var(--brand);border-color:var(--brand)}
 .muted{color:var(--muted);font-size:12px}
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px}
-.file{padding:12px;border:1px solid var(--border);border-radius:12px;background:#0e1016;margin-bottom:10px}
+.file{position:relative;padding:12px;border:2px solid var(--border);border-radius:12px;background:#0e1016;margin-bottom:10px;cursor:grab}
+.file:active{cursor:grabbing}
 .file .path{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans Mono", monospace;font-size:12px;color:#c4d2ff}
 .file .desc{color:var(--muted);margin-top:4px;font-size:13px}
 .tag{display:inline-block;margin:6px 6px 0 0;padding:2px 8px;border-radius:999px;background:#151a24;border:1px solid #263245;font-size:12px}
+.card-drag-handle{
+  position:absolute;
+  top:10px;
+  bottom:10px;
+  inset-inline-end:6px;
+  width:12px;
+  border-radius:999px;
+  background:linear-gradient(180deg, rgba(43,97,209,.28), rgba(43,97,209,.08));
+  pointer-events:none;
+  opacity:.5;
+  transition:opacity .2s ease;
+}
+.file:hover .card-drag-handle{opacity:.9}
+.file.is-dragging{outline:2px dashed rgba(32,201,151,.6);outline-offset:3px;opacity:.85}
 .topbar{display:grid;gap:10px;align-items:center}
 @media(min-width:1100px){ .topbar{grid-template-columns:auto 1fr auto} }
 .projectbar{display:flex;gap:8px;align-items:center}
@@ -54,77 +69,142 @@ textarea{min-height:84px;resize:vertical}
 
 .file.rm-hover{outline:3px dashed #6aa1ff; outline-offset:3px;}
 
-/* ==== Workspace (right column) ==== */
-body.workspace-padding {
-  padding-right: 320px; /* make room for fixed workspace; keeps look intact */
+/* ==== Workspace Drawer ==== */
+body.ws-ready{--ws-width:360px;transition:padding-inline-end .24s ease}
+body.ws-open{padding-inline-end:var(--ws-width)}
+body.ws-collapsed{padding-inline-end:0}
+body.ws-dragging{user-select:none}
+
+.workspace-drawer{
+  position:fixed;
+  inset-inline-end:0;
+  top:0;
+  height:100vh;
+  width:var(--ws-width);
+  min-width:260px;
+  max-width:640px;
+  background:var(--panel);
+  border-inline-start:1px solid var(--border);
+  box-shadow:-8px 0 24px rgba(0,0,0,.45);
+  display:flex;
+  transform:translateX(0);
+  transition:transform .24s ease;
+  z-index:30;
+}
+body.ws-collapsed .workspace-drawer{transform:translateX(100%);pointer-events:none}
+
+.ws-resizer{
+  position:absolute;
+  inset-inline-start:-6px;
+  top:0;
+  width:12px;
+  height:100%;
+  cursor:col-resize;
+  touch-action:none;
+  z-index:1;
+}
+body.ws-collapsed .ws-resizer{display:none}
+
+.workspace-inner{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  padding:16px 18px 20px;
+  overflow:hidden;
 }
 
-.workspace-column {
-  position: fixed;
-  right: 0;
-  top: 0;
-  height: 100vh;
-  width: 320px;
-  max-width: 35vw;
-  min-width: 280px;
-  background-color: var(--bg-secondary, #111);
-  border-left: 1px solid rgba(255,255,255,0.07);
-  padding: 10px 12px;
-  overflow-y: auto;
-  z-index: 20;
+.workspace-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.workspace-actions{display:flex;align-items:center;gap:8px}
+
+.workspace-clear-confirm{display:none;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.workspace-clear-confirm.show{display:inline-flex}
+.workspace-clear-confirm .btn{padding:4px 10px;font-size:12px}
+
+#workspaceClear{padding:6px 12px}
+#workspaceCollapse{width:32px;height:32px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center}
+
+.workspace-items{
+  flex:1;
+  overflow:auto;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  position:relative;
+  padding-inline-end:2px;
+}
+.workspace-items::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  border:2px dashed transparent;
+  border-radius:14px;
+  pointer-events:none;
+  transition:border-color .2s ease, box-shadow .2s ease;
+}
+.workspace-drawer.ws-drop-ready .workspace-items::before{border-color:rgba(43,97,209,.35);box-shadow:0 0 0 2px rgba(43,97,209,.25)}
+.workspace-drawer.ws-drop-active .workspace-items::before{border-color:rgba(32,201,151,.55);box-shadow:0 0 0 3px rgba(32,201,151,.35)}
+
+.workspace-empty{text-align:center;color:var(--muted);font-size:13px;margin:18px 0}
+
+.workspace-item{
+  background:var(--panel-2);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:10px 12px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  cursor:grab;
+  transition:border-color .2s ease, box-shadow .2s ease;
+}
+.workspace-item:active{cursor:grabbing}
+.workspace-item.dragging{opacity:.6}
+.workspace-item.pulse{animation:wsPulse .6s ease}
+
+.workspace-item-title{font-size:13px;font-weight:600;color:var(--text);word-break:break-word}
+.workspace-item-tags{display:flex;flex-wrap:wrap;gap:6px}
+.workspace-item-tags .tag{margin:0;font-size:11px;padding:2px 6px}
+.workspace-item-footer{display:flex;justify-content:flex-end}
+.workspace-remove{
+  padding:4px 8px;
+  border-radius:8px;
+  border:1px solid var(--border);
+  background:transparent;
+  color:var(--muted);
+  cursor:pointer;
+}
+.workspace-remove:hover{color:var(--text)}
+.workspace-remove:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+
+#wsToggleTab{
+  position:fixed;
+  top:40%;
+  inset-inline-end:0;
+  width:24px;
+  min-height:96px;
+  padding:12px 0;
+  border-radius:12px 0 0 12px;
+  border:1px solid var(--border);
+  border-inline-start:none;
+  background:var(--panel);
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  z-index:31;
+  box-shadow:-4px 0 16px rgba(0,0,0,.35);
+}
+body.ws-open #wsToggleTab{transform:translateX(100%);opacity:0;pointer-events:none}
+#wsToggleTab span{font-size:18px}
+
+.workspace-drawer .btn{white-space:nowrap}
+
+@keyframes wsPulse{
+  0%{box-shadow:0 0 0 0 rgba(32,201,151,.55)}
+  100%{box-shadow:0 0 0 16px rgba(32,201,151,0)}
 }
 
-.workspace-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
+@media(max-width:700px){
+  #wsToggleTab{top:auto;bottom:30%;min-height:80px}
 }
-
-#workspace-clear {
-  background: #222;
-  color: #eee;
-  border: 1px solid #444;
-  padding: 4px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-#workspace-clear:hover { background: #333; }
-
-.workspace-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.workspace-card {
-  background-color: #1a1a1a;
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 10px;
-  padding: 10px;
-  cursor: move;
-}
-
-.workspace-empty {
-  text-align: center;
-  opacity: 0.6;
-  font-size: 13px;
-  margin: 14px 0;
-}
-
-.workspace-dropzone {
-  outline: 2px dashed rgba(255,255,255,0.25);
-  border-radius: 10px;
-  min-height: 42px;
-}
-
-.pin-to-workspace {
-  background: transparent;
-  border: 1px solid rgba(255,255,255,0.15);
-  color: #ddd;
-  padding: 2px 6px;
-  border-radius: 6px;
-  cursor: pointer;
-  margin-inline-start: 6px;
-}
-.pin-to-workspace:hover { background: rgba(255,255,255,0.06); }

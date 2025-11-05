@@ -93,30 +93,33 @@
   </div>
 </div>
 
+<aside id="workspaceDrawer" aria-label="میز کار" class="workspace-drawer" tabindex="-1">
+  <div id="workspaceResizer" class="ws-resizer" aria-hidden="true"></div>
+  <div class="workspace-inner" id="workspaceContent">
+    <header class="workspace-header">
+      <h3 class="title">🧩 میز کار</h3>
+      <div class="workspace-actions">
+        <div id="workspaceClearConfirm" class="workspace-clear-confirm" aria-hidden="true">
+          <span>پاک شود؟</span>
+          <button type="button" class="btn ghost" id="workspaceConfirmYes">بله</button>
+          <button type="button" class="btn ghost" id="workspaceConfirmNo">خیر</button>
+        </div>
+        <button type="button" class="btn ghost" id="workspaceClear">پاک کردن</button>
+        <button type="button" class="btn" id="workspaceCollapse" aria-expanded="true" aria-label="جمع کردن میز کار">⮜</button>
+      </div>
+    </header>
+    <div id="workspaceItems" class="workspace-items" aria-live="polite">
+      <p class="workspace-empty">برای اضافه کردن کارت، بکش و بنداز اینجا یا روی 📌 کلیک کن</p>
+    </div>
+  </div>
+</aside>
+<button type="button" id="wsToggleTab" aria-label="باز کردن میز کار" aria-expanded="false">
+  <span>⮞</span>
+</button>
+
 <script src="/static/app.js"></script>
 <script src="/static/editor.js"></script>
 <script src="/static/radmap_hotfix_2025-09-16c.js"></script>
-
-<!-- === Workspace (temporary board) === -->
-<aside id="workspace" class="workspace-column" aria-label="Workspace">
-  <div class="workspace-header">
-    <h3>🧩 میز کار</h3>
-    <button id="workspace-clear" title="پاک کردن همه">پاک کردن</button>
-  </div>
-  <div id="workspace-list" class="workspace-list" aria-live="polite">
-    <p class="workspace-empty">برای اضافه کردن کارت، بکش و بنداز اینجا یا روی 📌 کلیک کن</p>
-  </div>
-</aside>
-<!-- /Workspace -->
-
-<!-- Initialize workspace after page load -->
-<script>
-  document.addEventListener('DOMContentLoaded', function () {
-    if (window.Workspace) {
-      window.Workspace.init();
-    }
-  });
-</script>
 
 </body>
 </html>
