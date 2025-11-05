@@ -93,27 +93,22 @@
   </div>
 </div>
 
-<aside id="workspacePanel" class="ws ws--closed" data-role="workspace" aria-label="Workspace">
-  <div id="workspaceResizer" class="ws__resizer" aria-hidden="true"></div>
-  <header class="ws__head">
-    <span class="ws__title">میز کار</span>
-    <button id="workspaceClear" class="ws__clear" type="button">یک‌کَن</button>
-  </header>
-  <div id="workspaceHint" class="ws__hint">برای اضافه کردن کارت، بکش و بنداز اینجا</div>
-  <div id="workspaceList" class="ws__list" aria-live="polite"></div>
+<aside id="workspacePanel" class="workspace-panel" aria-label="میز کار" aria-hidden="true">
+  <div id="workspaceResizer" class="workspace-resizer" role="separator" aria-orientation="vertical" aria-hidden="true"></div>
+  <div class="workspace-shell">
+    <header class="workspace-header">
+      <h3 class="workspace-title">میز کار</h3>
+      <button id="workspaceClear" type="button" class="btn ghost workspace-clear">یک‌کَن</button>
+    </header>
+    <p id="workspaceHint" class="workspace-hint">برای اضافه کردن کارت، بکش و بنداز اینجا</p>
+    <div id="workspaceList" class="workspace-list" role="list" aria-live="polite" aria-label="آیتم‌های میز کار"></div>
+  </div>
 </aside>
 
-<button id="workspaceToggle" class="ws-toggle" aria-controls="workspacePanel" aria-expanded="false">〈</button>
+<button id="workspaceToggle" class="workspace-toggle" aria-controls="workspacePanel" aria-expanded="false" aria-label="باز کردن میز کار">❮</button>
 
-<script src="{{ url_for('static', filename='app.js') }}"></script>
-<script src="{{ url_for('static', filename='editor.js') }}"></script>
-<script src="/static/radmap_hotfix_2025-09-16c.js"></script>
-<script>
-  document.addEventListener('DOMContentLoaded', function(){
-    if (window.Workspace && typeof window.Workspace.init === 'function') {
-      window.Workspace.init();
-    }
-  });
-</script>
+<script defer src="{{ url_for('static', filename='editor.js') }}"></script>
+<script defer src="{{ url_for('static', filename='app.js') }}"></script>
+<script defer src="/static/radmap_hotfix_2025-09-16c.js"></script>
 </body>
 </html>
