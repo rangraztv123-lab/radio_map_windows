@@ -45,12 +45,12 @@ const elAddTagChips = () => $('addTagChips');
 const elAddTagHints = () => $('addTagHints');
 
 const Workspace = (() => {
-  const WIDTH_KEY = 'workspace:width';
-  const COLLAPSE_KEY = 'workspace:collapsed';
-  const ITEMS_KEY_PREFIX = 'workspace:items:';
+  const WIDTH_KEY = 'workspaceWidth';
+  const OPEN_KEY = 'workspaceOpen';
+  const ITEMS_KEY = 'workspaceItems';
   const DEFAULT_WIDTH = 360;
-  const MIN_WIDTH = 260;
-  const MAX_WIDTH = 640;
+  const MIN_WIDTH = 280;
+  const MAX_WIDTH_RATIO = 0.45;
 
   let drawer;
   let resizer;
@@ -116,7 +116,8 @@ const Workspace = (() => {
   }
 
   function clampWidth(px){
-    const maxAllowed = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, window.innerWidth - 120));
+    const viewportLimit = Math.max(MIN_WIDTH, Math.floor(window.innerWidth * MAX_WIDTH_RATIO));
+    const maxAllowed = Math.max(MIN_WIDTH, viewportLimit);
     return Math.min(Math.max(px, MIN_WIDTH), maxAllowed);
   }
 
@@ -133,32 +134,140 @@ const Workspace = (() => {
   }
 
   function readStoredCollapsed(){
-    const stored = localStorage.getItem(COLLAPSE_KEY);
+    const stored = localStorage.getItem(OPEN_KEY);
     if (stored === null){
-      return window.innerWidth <= 1024;
+      return false;
     }
-    return stored === 'true';
+    return stored !== 'true';
   }
 
-  function saveStoredCollapsed(){
-    localStorage.setItem(COLLAPSE_KEY, collapsed ? 'true' : 'false');
+  function saveStoredOpen(){
+    localStorage.setItem(OPEN_KEY, collapsed ? 'false' : 'true');
   }
 
   function readStoredItems(){
-    const key = ITEMS_KEY_PREFIX + projectKey;
+    const legacyKey = `workspace:items:${projectKey}`;
+    const legacy = localStorage.getItem(legacyKey);
+    if (legacy){
+      try{
+        const parsed = JSON.parse(legacy);
+        if (Array.isArray(parsed)){
+          localStorage.removeItem(legacyKey);
+          return parsed.map(id => createSnapshot(id)).filter(Boolean);
+        }
+      }catch(err){ /* ignore */ }
+    }
+
     try{
-      const raw = localStorage.getItem(key);
+      const raw = localStorage.getItem(ITEMS_KEY);
       if (!raw) return [];
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      if (!Array.isArray(parsed)) return [];
+      if (parsed.length && parsed.every(entry => typeof entry === 'string')){
+        return parsed.map(id => createSnapshot(id)).filter(Boolean);
+      }
+      const collected = [];
+      parsed.forEach(entry => {
+        if (typeof entry === 'string'){
+          const snap = createSnapshot(entry);
+          if (snap) collected.push(snap);
+          return;
+        }
+        if (!entry || typeof entry !== 'object') return;
+        if (entry.project && entry.project !== projectKey) return;
+        if (!entry.project && projectKey !== '__default__') return;
+        const normalized = normalizeEntry(entry);
+        if (normalized) collected.push(normalized);
+      });
+      return collected;
     }catch(err){
       return [];
     }
   }
 
   function persistItems(){
-    const key = ITEMS_KEY_PREFIX + projectKey;
-    localStorage.setItem(key, JSON.stringify(items));
+    let existing = [];
+    try{
+      const raw = localStorage.getItem(ITEMS_KEY);
+      if (raw){
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)){
+          existing = parsed.filter(entry => entry && typeof entry === 'object' && entry.project !== projectKey);
+        }
+      }
+    }catch(err){
+      existing = [];
+    }
+
+    const payload = items.map(item => ({
+      project: projectKey,
+      id: item.id,
+      file: item.file,
+      desc: item.desc || '',
+      tags: Array.isArray(item.tags) ? item.tags.slice() : []
+    }));
+
+    localStorage.setItem(ITEMS_KEY, JSON.stringify([...existing, ...payload]));
+  }
+
+  function normalizeEntry(entry){
+    if (!entry || typeof entry !== 'object') return null;
+    const rawId = typeof entry.id === 'string' ? entry.id : (entry.file ? encodeURIComponent(entry.file) : null);
+    if (!rawId) return null;
+    const tags = Array.isArray(entry.tags)
+      ? entry.tags
+          .map(tag => typeof tag === 'string' ? tag.trim() : '')
+          .filter(tag => tag.length)
+      : [];
+    return {
+      id: rawId,
+      file: entry.file || entry.title || decodeURIComponentSafe(rawId),
+      desc: typeof entry.desc === 'string' ? entry.desc : (typeof entry.description === 'string' ? entry.description : ''),
+      tags
+    };
+  }
+
+  function createSnapshot(id, fallback={}){
+    if (!id) return null;
+    const key = typeof id === 'string' ? id : String(id);
+    const data = findItemById(key) || null;
+    const tags = data?.tags && Array.isArray(data.tags)
+      ? data.tags.map(tag => String(tag).trim()).filter(Boolean)
+      : Array.isArray(fallback.tags)
+        ? fallback.tags.map(tag => String(tag).trim()).filter(Boolean)
+        : [];
+    return {
+      id: key,
+      file: data?.file || fallback.file || decodeURIComponentSafe(key),
+      desc: typeof data?.desc === 'string' ? data.desc : (typeof fallback.desc === 'string' ? fallback.desc : ''),
+      tags
+    };
+  }
+
+  function hydrateEntry(entry){
+    if (!entry) return entry;
+    const data = findItemById(entry.id);
+    if (!data) return entry;
+    const tags = Array.isArray(data.tags) ? data.tags.slice() : [];
+    const desc = typeof data.desc === 'string' ? data.desc : '';
+    const file = data.file || entry.file;
+    const changed = file !== entry.file || desc !== (entry.desc || '') || !arraysEqual(tags, entry.tags || []);
+    if (!changed) return entry;
+    return {
+      id: entry.id,
+      file,
+      desc,
+      tags
+    };
+  }
+
+  function arraysEqual(a, b){
+    if (!Array.isArray(a) || !Array.isArray(b)) return Array.isArray(a) === Array.isArray(b);
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++){
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
   }
 
   function applyWidth(width, persist=true){
@@ -196,7 +305,7 @@ const Workspace = (() => {
       toggleTab.title = collapsed ? 'باز کردن میز کار' : 'جمع کردن میز کار';
     }
     if (persist){
-      saveStoredCollapsed();
+      saveStoredOpen();
     }
   }
 
@@ -252,9 +361,12 @@ const Workspace = (() => {
   }
 
   function setupDropZone(){
-    if (!content) return;
-    ['dragenter','dragover','dragleave','drop'].forEach(evt => {
-      content.addEventListener(evt, handleDropEvents);
+    const targets = [content, list].filter(Boolean);
+    if (!targets.length) return;
+    targets.forEach(target => {
+      ['dragenter','dragover','dragleave','drop'].forEach(evt => {
+        target.addEventListener(evt, handleDropEvents);
+      });
     });
   }
 
@@ -287,7 +399,8 @@ const Workspace = (() => {
     }
 
     if (ev.type === 'dragleave'){
-      if (!content.contains(ev.relatedTarget)){
+      const within = list && ev.relatedTarget ? list.contains(ev.relatedTarget) : false;
+      if (!within){
         clearDropVisuals();
       }
       return;
@@ -327,7 +440,16 @@ const Workspace = (() => {
 
   function commitReorder(){
     if (!list) return;
-    items = Array.from(list.querySelectorAll('.workspace-item')).map(el => el.dataset.cardId).filter(Boolean);
+    const order = Array.from(list.querySelectorAll('.workspace-item')).map(el => el.dataset.cardId).filter(Boolean);
+    const lookup = new Map(items.map(entry => [entry.id, entry]));
+    const reordered = order.map(id => lookup.get(id)).filter(Boolean);
+    if (reordered.length !== items.length){
+      const seen = new Set(order);
+      items.forEach(entry => {
+        if (!seen.has(entry.id)) reordered.push(entry);
+      });
+    }
+    items = reordered;
     persistItems();
   }
 
@@ -377,49 +499,47 @@ const Workspace = (() => {
       return;
     }
 
-    const missing = [];
-    items.forEach(id => {
-      const data = findItemById(id);
-      if (!data){
-        missing.push(id);
-        return;
+    const refreshed = [];
+    let dirty = false;
+    items.forEach(entry => {
+      const hydrated = hydrateEntry(entry) || entry;
+      if (hydrated !== entry){
+        dirty = true;
       }
-      const card = createWorkspaceItem(id, data);
+      refreshed.push(hydrated);
+      const card = createWorkspaceItem(hydrated);
       list.appendChild(card);
     });
 
-    if (missing.length){
-      items = items.filter(id => !missing.includes(id));
-      if (missing.length){
-        persistItems();
-      }
-      if (!items.length){
-        renderWorkspaceItems();
-      }
+    items = refreshed;
+    if (dirty){
+      persistItems();
     }
   }
 
-  function createWorkspaceItem(id, item){
+  function createWorkspaceItem(item){
+    const {id, file, tags: tagList = []} = item;
     const node = document.createElement('div');
     node.className = 'workspace-item';
     node.draggable = true;
     node.dataset.cardId = id;
+    node.setAttribute('role', 'listitem');
 
     const title = document.createElement('div');
     title.className = 'workspace-item-title';
-    title.textContent = item?.file || decodeURIComponentSafe(id);
+    title.textContent = file || decodeURIComponentSafe(id);
     node.appendChild(title);
 
-    if (item && Array.isArray(item.tags) && item.tags.length){
-      const tags = document.createElement('div');
-      tags.className = 'workspace-item-tags';
-      item.tags.forEach(tag => {
+    if (Array.isArray(tagList) && tagList.length){
+      const tagWrap = document.createElement('div');
+      tagWrap.className = 'workspace-item-tags';
+      tagList.forEach(tag => {
         const span = document.createElement('span');
         span.className = 'tag';
         span.textContent = tag;
-        tags.appendChild(span);
+        tagWrap.appendChild(span);
       });
-      node.appendChild(tags);
+      node.appendChild(tagWrap);
     }
 
     const footer = document.createElement('div');
@@ -459,23 +579,26 @@ const Workspace = (() => {
   }
 
   function removeItem(id){
-    const next = items.filter(itemId => itemId !== id);
+    const next = items.filter(entry => entry.id !== id);
     if (next.length === items.length) return;
     items = next;
     persistItems();
     renderWorkspaceItems();
   }
 
-  function addItem(id, position){
+  function addItem(id, position, snapshot){
     if (!id) return;
-    if (items.includes(id)){
+    if (items.some(entry => entry.id === id)){
       highlightExisting(id);
       return;
     }
+    hideClearConfirm();
+    const payload = snapshot || createSnapshot(id);
+    if (!payload) return;
     if (typeof position === 'number' && position >= 0 && position <= items.length){
-      items.splice(position, 0, id);
+      items.splice(position, 0, payload);
     }else{
-      items.push(id);
+      items.push(payload);
     }
     persistItems();
     renderWorkspaceItems();
@@ -577,7 +700,7 @@ const Workspace = (() => {
     if (!card) return;
     const id = card.dataset.cardId;
     if (!id) return;
-    addItem(id);
+    addItem(id, undefined, createSnapshot(id));
   }
 
   function addItemById(id){
