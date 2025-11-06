@@ -84,243 +84,487 @@ editSave.addEventListener('click', async ()=>{
 });
 editCancel.addEventListener('click', closeEditModal);
 
-// ================= Workspace Feature (temporary board) =================
-(function () {
-  const LS_KEY = 'workspaceItems:v1';
+// ================= Workspace Panel =================
+class Workspace {
+  constructor() {
+    this.root = document.getElementById('workspace');
+    this.list = document.getElementById('ws-list');
+    this.toggleBtn = document.getElementById('ws-toggle');
+    this.clearBtn = document.getElementById('ws-clear');
+    this.resizer = this.root ? this.root.querySelector('.ws-resizer') : null;
+    this.hint = this.root ? this.root.querySelector('.ws-hint') : null;
+    this.cardCache = new Map();
+    this.items = [];
+    this.draggingId = null;
+    this.draggingFromWorkspace = false;
+    this.currentProject = '';
 
-  // Body padding to make room for the fixed workspace column
-  if (!document.body.classList.contains('workspace-padding')) {
-    document.body.classList.add('workspace-padding');
-  }
+    window.Workspace = this;
 
-  function loadIds() {
-    try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; }
-    catch { return []; }
-  }
-  function saveIds(ids) {
-    localStorage.setItem(LS_KEY, JSON.stringify(ids));
-  }
-  function uniq(arr){ return Array.from(new Set(arr)); }
-
-  // ---- ID helpers: each result card must have a stable data-item-id
-  function ensureCardId(el) {
-    if (el.dataset && el.dataset.itemId) return el.dataset.itemId;
-    // fallback: hash from text (not perfect but stable for current session)
-    const text = (el.innerText || '').slice(0, 2000);
-    const id = 'auto_' + hash32(text);
-    if (el.dataset) el.dataset.itemId = id;
-    return id;
-  }
-  function hash32(s){
-    let h = 2166136261 >>> 0;
-    for (let i=0;i<s.length;i++){
-      h ^= s.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    return (h>>>0).toString(16);
-  }
-
-  // ---- DOM getters
-  const $ = sel => document.querySelector(sel);
-  const $$ = sel => Array.from(document.querySelectorAll(sel));
-  const workspace = {
-    list: null,
-    clearBtn: null,
-  };
-
-  // Public API
-  window.Workspace = {
-    init,
-    addById,
-    removeById,
-    render,
-    clearAll,
-  };
-
-  // Initialize events and first render
-  function init() {
-    workspace.list = $('#workspace-list');
-    workspace.clearBtn = $('#workspace-clear');
-
-    if (!workspace.list) return; // workspace not on page
-
-    // Drag target (from results) -> workspace
-    workspace.list.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      workspace.list.classList.add('workspace-dropzone');
-    });
-    workspace.list.addEventListener('dragleave', () => {
-      workspace.list.classList.remove('workspace-dropzone');
-    });
-    workspace.list.addEventListener('drop', (e) => {
-      e.preventDefault();
-      workspace.list.classList.remove('workspace-dropzone');
-      const id = e.dataTransfer.getData('text/x-card-id');
-      if (id) addById(id);
-    });
-
-    // Clear button
-    if (workspace.clearBtn) {
-      workspace.clearBtn.addEventListener('click', () => {
-        if (confirm('همه آیتم‌ها از میز کار حذف شود؟')) clearAll();
-      });
-    }
-
-    // Global delegation: add 📌 button to each card (non-destructive)
-    injectPinButtons();
-
-    // Make result cards draggable
-    makeCardsDraggable();
-
-    // First render
-    render();
-
-    // Re-inject after dynamic updates (if your app re-renders the list)
-    const mo = new MutationObserver(() => {
-      injectPinButtons();
-      makeCardsDraggable();
-    });
-    mo.observe(document.body, { childList: true, subtree: true });
-  }
-
-  function injectPinButtons() {
-    // Likely card containers (add more if needed)
-    const cards = $$('.result-card, .card, .item-card, [data-card], .search-result');
-    cards.forEach(card => {
-      // Skip if pin already exists
-      if (card.querySelector('.pin-to-workspace')) return;
-      // Place button near existing action buttons (edit/cut/delete) if present
-      const bar = card.querySelector('.actions, .btn-group, .card-actions') || card;
-      const btn = document.createElement('button');
-      btn.className = 'pin-to-workspace';
-      btn.type = 'button';
-      btn.title = 'افزودن به میز کار';
-      btn.textContent = '📌';
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = ensureCardId(card);
-        addById(id);
-      });
-      bar.appendChild(btn);
-    });
-  }
-
-  function makeCardsDraggable() {
-    const cards = $$('.result-card, .card, .item-card, [data-card], .search-result');
-    cards.forEach(card => {
-      card.setAttribute('draggable', 'true');
-      card.addEventListener('dragstart', (e) => {
-        const id = ensureCardId(card);
-        e.dataTransfer.setData('text/x-card-id', id);
-        e.dataTransfer.effectAllowed = 'copyMove';
-      });
-    });
-  }
-
-  // Workspace operations
-  function addById(id) {
-    const ids = uniq(loadIds().concat(id));
-    saveIds(ids);
-    render();
-  }
-  function removeById(id) {
-    const ids = loadIds().filter(x => x !== id);
-    saveIds(ids);
-    render();
-  }
-  function clearAll() {
-    saveIds([]);
-    render();
-  }
-
-  // Reorder support
-  function enableReorder(cardEl) {
-    cardEl.setAttribute('draggable', 'true');
-    cardEl.addEventListener('dragstart', (e) => {
-      e.dataTransfer.setData('text/x-ws-id', cardEl.dataset.itemId);
-      e.dataTransfer.effectAllowed = 'move';
-      cardEl.classList.add('dragging');
-    });
-    cardEl.addEventListener('dragend', () => {
-      cardEl.classList.remove('dragging');
-    });
-  }
-
-  function render() {
-    if (!workspace.list) return;
-    const ids = loadIds();
-    workspace.list.innerHTML = '';
-
-    if (!ids.length) {
-      workspace.list.innerHTML = '<p class="workspace-empty">برای اضافه کردن کارت، بکش و بنداز اینجا یا روی 📌 کلیک کن</p>';
+    if (!this.root || !this.list || !this.toggleBtn) {
       return;
     }
 
-    ids.forEach(id => {
-      // Try to find the original card to clone its markup (keeps look identical)
-      const src = document.querySelector(`[data-item-id="${CSS.escape(id)}"]`) ||
-                  document.querySelector(`.result-card, .card, .item-card, [data-card], .search-result`);
-      let clone;
-      if (src) {
-        // Ensure id on source
-        ensureCardId(src);
-        clone = src.cloneNode(true);
-      } else {
-        // Fallback minimal card
-        clone = document.createElement('div');
-        clone.textContent = id;
-        clone.className = 'workspace-card';
-      }
+    this.minWidth = this.getSize('--wsw-min', 280);
+    this.maxWidth = this.getSize('--wsw-max', 640);
 
-      // Make it a workspace card
-      clone.classList.add('workspace-card');
-      clone.dataset.itemId = id;
+    this.loadState();
+    this.applyOpenState(this.isOpen);
+    this.applyWidth(this.width);
 
-      // Remove inner "pin" buttons inside workspace clone
-      clone.querySelectorAll('.pin-to-workspace').forEach(b => b.remove());
+    this.bindEvents();
+    this.render();
 
-      // Add remove button
-      const removeBtn = document.createElement('button');
-      removeBtn.textContent = '✖';
-      removeBtn.title = 'حذف از میز کار';
-      removeBtn.style.cssText = 'float:inline-end;margin-inline-start:6px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#ddd;padding:2px 6px;border-radius:6px;cursor:pointer;';
-      removeBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        removeById(id);
-      });
-      clone.prepend(removeBtn);
+    window.Workspace = this;
+  }
 
-      // Enable reorder within workspace
-      enableReorder(clone);
+  getSize(varName, fallback) {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    const parsed = parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
 
-      // Handle drop position (reorder)
-      clone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        const dragging = workspace.list.querySelector('.workspace-card.dragging');
-        if (!dragging || dragging === clone) return;
-        const cards = Array.from(workspace.list.children);
-        const draggingIdx = cards.indexOf(dragging);
-        const targetIdx = cards.indexOf(clone);
-        const rect = clone.getBoundingClientRect();
-        const before = (e.clientY - rect.top) < rect.height / 2;
-        if (before) {
-          workspace.list.insertBefore(dragging, clone);
-          rearrangeIds(draggingIdx, targetIdx);
-        } else {
-          workspace.list.insertBefore(dragging, clone.nextSibling);
-          rearrangeIds(draggingIdx, targetIdx + 1);
-        }
-      });
+  parseInitialWidth() {
+    const inline = this.root.style.getPropertyValue('--wsw') || getComputedStyle(this.root).getPropertyValue('--wsw');
+    const parsed = parseFloat(inline);
+    return Number.isFinite(parsed) ? parsed : 360;
+  }
 
-      workspace.list.appendChild(clone);
+  loadState() {
+    const storedOpen = localStorage.getItem('workspace:open');
+    this.isOpen = storedOpen === null ? this.root.dataset.open === 'true' : storedOpen === 'true';
+
+    const storedWidth = parseFloat(localStorage.getItem('workspace:width'));
+    this.width = Number.isFinite(storedWidth) ? storedWidth : this.parseInitialWidth();
+    this.width = this.clampWidth(this.width);
+
+    try {
+      const saved = JSON.parse(localStorage.getItem('workspace:items'));
+      this.items = Array.isArray(saved) ? saved.map((item) => this.normalizeItem(item)).filter(Boolean) : [];
+    } catch (e) {
+      this.items = [];
+    }
+  }
+
+  normalizeItem(item) {
+    if (!item || typeof item !== 'object') return null;
+    if (!item.id) return null;
+    const tags = Array.isArray(item.tags)
+      ? item.tags
+      : typeof item.tags === 'string'
+        ? item.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+        : [];
+    return {
+      id: item.id,
+      project: item.project || '',
+      index: typeof item.index === 'number' ? item.index : Number(item.index) || 0,
+      file: item.file || '',
+      desc: item.desc || '',
+      tags,
+      used: !!item.used
+    };
+  }
+
+  clampWidth(width) {
+    return Math.min(this.maxWidth, Math.max(this.minWidth, Number.isFinite(width) ? width : this.parseInitialWidth()));
+  }
+
+  applyWidth(width) {
+    const val = this.clampWidth(width);
+    this.width = val;
+    this.root.style.setProperty('--wsw', `${val}px`);
+    localStorage.setItem('workspace:width', String(val));
+  }
+
+  applyOpenState(open) {
+    this.isOpen = !!open;
+    this.root.dataset.open = String(this.isOpen);
+    this.toggleBtn.setAttribute('aria-expanded', String(this.isOpen));
+    this.root.classList.toggle('is-closed', !this.isOpen);
+    localStorage.setItem('workspace:open', this.isOpen ? 'true' : 'false');
+  }
+
+  bindEvents() {
+    this.toggleBtn.addEventListener('click', () => {
+      this.applyOpenState(!this.isOpen);
     });
+
+    if (this.clearBtn) {
+      this.clearBtn.addEventListener('click', () => {
+        if (!this.items.length) return;
+        if (!window.confirm('Clear all workspace items?')) return;
+        this.items = [];
+        this.saveItems();
+        this.render();
+      });
+    }
+
+    if (this.resizer) {
+      this.resizer.addEventListener('pointerdown', (e) => this.onResizeStart(e));
+    }
+
+    this.list.addEventListener('dragover', (e) => this.onListDragOver(e));
+    this.list.addEventListener('dragleave', (e) => this.onListDragLeave(e));
+    this.list.addEventListener('drop', (e) => this.onListDrop(e));
   }
 
-  function rearrangeIds(from, to) {
-    const arr = loadIds();
-    if (from < 0 || to < 0 || from === to) return;
-    const item = arr.splice(from, 1)[0];
-    arr.splice(to > from ? to - 1 : to, 0, item);
-    saveIds(arr);
+  onResizeStart(event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = this.width;
+    if (this.resizer && event.pointerId !== undefined) {
+      try {
+        this.resizer.setPointerCapture(event.pointerId);
+      } catch (err) {
+        /* noop */
+      }
+    }
+
+    const onMove = (e) => {
+      const delta = startX - e.clientX;
+      this.applyWidth(startWidth + delta);
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      if (this.resizer && event.pointerId !== undefined) {
+        try {
+          this.resizer.releasePointerCapture(event.pointerId);
+        } catch (err) {
+          /* noop */
+        }
+      }
+      document.removeEventListener('pointerup', onUp);
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp, { once: true });
   }
-})();
+
+  acceptsDrag(event) {
+    const types = event?.dataTransfer?.types;
+    if (!types) return false;
+    return Array.from(types).includes('text/plain');
+  }
+
+  onListDragOver(event) {
+    if (!this.acceptsDrag(event)) return;
+    event.preventDefault();
+    this.list.classList.add('ws-drop-ok');
+    event.dataTransfer.dropEffect = this.draggingFromWorkspace ? 'move' : 'copy';
+  }
+
+  onListDragLeave(event) {
+    if (!this.list.contains(event.relatedTarget)) {
+      this.list.classList.remove('ws-drop-ok');
+    }
+  }
+
+  onListDrop(event) {
+    if (!this.acceptsDrag(event)) return;
+    event.preventDefault();
+    this.list.classList.remove('ws-drop-ok');
+    const id = event.dataTransfer.getData('text/plain');
+    if (!id) return;
+    const index = this.getDropIndex(event.clientY);
+    if (this.draggingFromWorkspace && this.draggingId === id) {
+      this.moveItem(id, index);
+    } else {
+      this.addItem(id, index);
+    }
+    this.draggingId = null;
+    this.draggingFromWorkspace = false;
+  }
+
+  getDropIndex(clientY) {
+    const cards = Array.from(this.list.querySelectorAll('.ws-card'));
+    for (let i = 0; i < cards.length; i++) {
+      const rect = cards[i].getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) {
+        return i;
+      }
+    }
+    return cards.length;
+  }
+
+  addItem(id, index) {
+    const raw = this.cardCache.get(id) || this.extractFromDom(id);
+    const data = this.normalizeItem(raw);
+    if (!data) return;
+
+    const existing = this.items.findIndex((item) => item.id === id);
+    if (existing !== -1) {
+      this.moveItem(id, index);
+      return;
+    }
+
+    const targetIndex = typeof index === 'number' && index >= 0 ? Math.min(index, this.items.length) : this.items.length;
+    this.items.splice(targetIndex, 0, data);
+    this.saveItems();
+    this.render();
+    if (!this.isOpen) this.applyOpenState(true);
+  }
+
+  moveItem(id, index) {
+    const from = this.items.findIndex((item) => item.id === id);
+    if (from === -1) return;
+
+    let to = typeof index === 'number' ? index : this.items.length - 1;
+    to = Math.max(0, Math.min(to, this.items.length));
+    const [item] = this.items.splice(from, 1);
+    if (to > from) to -= 1;
+    this.items.splice(to, 0, item);
+    this.saveItems();
+    this.render();
+  }
+
+  removeItem(id) {
+    const next = this.items.filter((item) => item.id !== id);
+    if (next.length === this.items.length) return;
+    this.items = next;
+    this.saveItems();
+    this.render();
+  }
+
+  saveItems() {
+    localStorage.setItem('workspace:items', JSON.stringify(this.items));
+  }
+
+  createWorkspaceCard(item) {
+    const card = document.createElement('div');
+    card.className = 'ws-card card';
+    card.dataset.id = item.id;
+    card.setAttribute('draggable', 'true');
+
+    const title = document.createElement('div');
+    title.textContent = item.file || '(No file)';
+    title.style.fontWeight = '600';
+    title.style.color = '#d5ddff';
+    card.appendChild(title);
+
+    if (item.desc) {
+      const desc = document.createElement('div');
+      desc.textContent = item.desc;
+      desc.style.opacity = '0.8';
+      desc.style.fontSize = '0.9rem';
+      card.appendChild(desc);
+    }
+
+    const meta = [];
+    if (item.project) meta.push(`Project: ${item.project}`);
+    if (item.used) meta.push('Marked as used');
+    if (meta.length) {
+      const metaEl = document.createElement('div');
+      metaEl.className = 'muted';
+      metaEl.style.fontSize = '0.8rem';
+      metaEl.textContent = meta.join(' • ');
+      card.appendChild(metaEl);
+    }
+
+    if (item.tags && item.tags.length) {
+      const tags = document.createElement('div');
+      tags.style.display = 'flex';
+      tags.style.flexWrap = 'wrap';
+      tags.style.gap = '6px';
+      item.tags.forEach((tag) => {
+        const span = document.createElement('span');
+        span.className = 'tag';
+        span.textContent = tag;
+        tags.appendChild(span);
+      });
+      card.appendChild(tags);
+    }
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.justifyContent = 'flex-end';
+    actions.style.marginTop = '8px';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn ghost';
+    remove.textContent = 'Remove';
+    remove.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.removeItem(item.id);
+    });
+    actions.appendChild(remove);
+    card.appendChild(actions);
+
+    card.addEventListener('dragstart', (e) => this.onWorkspaceDragStart(e, item.id, card));
+    card.addEventListener('dragend', () => this.onWorkspaceDragEnd(card));
+    card.addEventListener('dragover', (e) => this.onWorkspaceItemDragOver(e));
+
+    return card;
+  }
+
+  onWorkspaceDragStart(event, id, card) {
+    this.draggingFromWorkspace = true;
+    this.draggingId = id;
+    card.classList.add('dragging');
+    event.dataTransfer.setData('text/plain', id);
+    event.dataTransfer.effectAllowed = 'move';
+  }
+
+  onWorkspaceDragEnd(card) {
+    card.classList.remove('dragging');
+    this.draggingFromWorkspace = false;
+    this.draggingId = null;
+  }
+
+  onWorkspaceItemDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }
+
+  render() {
+    if (!this.list) return;
+    this.list.classList.remove('ws-drop-ok');
+    this.list.innerHTML = '';
+
+    if (!this.items.length) {
+      if (this.hint) this.hint.style.display = '';
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    this.items.forEach((item) => {
+      fragment.appendChild(this.createWorkspaceCard(item));
+    });
+    this.list.appendChild(fragment);
+    if (this.hint) this.hint.style.display = 'none';
+  }
+
+  extractFromDom(id) {
+    if (!id) return null;
+    if (this.cardCache.has(id)) {
+      return this.cardCache.get(id);
+    }
+    const selector = `[data-id="${CSS.escape(id)}"]`;
+    const el = document.querySelector(selector);
+    if (!el) {
+      return this.items.find((item) => item.id === id) || null;
+    }
+    const info = {
+      id,
+      project: el.dataset.project || this.currentProject || '',
+      index: Number(el.dataset.index) || 0,
+      file: el.dataset.file || el.querySelector('.path')?.textContent?.trim() || '',
+      desc: el.dataset.desc || '',
+      tags: el.dataset.tags ? el.dataset.tags.split(',').filter(Boolean) : Array.from(el.querySelectorAll('.tag')).map((tag) => tag.textContent.trim()),
+      used: el.dataset.used === '1' || el.dataset.used === 'true'
+    };
+    const normalized = this.normalizeItem(info);
+    this.cardCache.set(id, normalized);
+    return normalized;
+  }
+
+  updateItem(info) {
+    const idx = this.items.findIndex((item) => item.id === info.id);
+    if (idx === -1) return false;
+    const current = this.items[idx];
+    const next = { ...current, ...info, tags: Array.isArray(info.tags) ? info.tags : current.tags };
+    const changed = JSON.stringify(current) !== JSON.stringify(next);
+    if (changed) {
+      this.items[idx] = next;
+      this.saveItems();
+    }
+    return changed;
+  }
+
+  registerResultCard(card, meta = {}) {
+    if (!card) return;
+    const id = card.dataset.id || this.composeId(meta.project, meta.index);
+    if (!id) return;
+    card.dataset.id = id;
+    if (meta.project) card.dataset.project = meta.project;
+    if (typeof meta.index === 'number') card.dataset.index = String(meta.index);
+
+    const info = this.normalizeItem(this.buildInfoFromMeta(id, card, meta));
+    if (!info) return;
+    this.cardCache.set(id, info);
+    this.updateItem(info);
+  }
+
+  buildInfoFromMeta(id, card, meta) {
+    const dataset = card.dataset || {};
+    const data = meta.data || {};
+    const tags = Array.isArray(data.tags)
+      ? data.tags
+      : dataset.tags
+        ? dataset.tags.split(',').filter(Boolean)
+        : Array.from(card.querySelectorAll('.tag')).map((tag) => tag.textContent.trim());
+    const info = {
+      id,
+      project: meta.project || dataset.project || this.currentProject || '',
+      index: typeof meta.index === 'number' ? meta.index : Number(dataset.index) || 0,
+      file: data.file || dataset.file || card.querySelector('.path')?.textContent?.trim() || '',
+      desc: data.desc || dataset.desc || '',
+      tags,
+      used: Boolean(data.used || dataset.used === '1' || dataset.used === 'true')
+    };
+    if (info.tags && !Array.isArray(info.tags)) {
+      info.tags = [info.tags];
+    }
+    card.dataset.file = info.file;
+    card.dataset.desc = info.desc;
+    card.dataset.tags = info.tags.join(',');
+    card.dataset.used = info.used ? '1' : '0';
+    return info;
+  }
+
+  addItemFromCard(card) {
+    if (!card) return;
+    const id = card.dataset.id;
+    if (!id) return;
+    this.addItem(id, this.items.length);
+  }
+
+  refresh() {
+    let changed = false;
+    this.items = this.items.map((item) => {
+      const cached = this.cardCache.get(item.id);
+      if (!cached) return item;
+      const next = this.normalizeItem({ ...item, ...cached, tags: Array.isArray(cached.tags) ? cached.tags : item.tags });
+      if (JSON.stringify(item) !== JSON.stringify(next)) {
+        changed = true;
+      }
+      return next;
+    });
+    if (changed) {
+      this.saveItems();
+    }
+    this.render();
+  }
+
+  setProject(project, data) {
+    this.currentProject = project;
+    if (!Array.isArray(data)) {
+      return;
+    }
+    data.forEach((item, index) => {
+      const id = this.composeId(project, index);
+      const info = {
+        id,
+        project,
+        index,
+        file: item.file,
+        desc: item.desc || '',
+        tags: Array.isArray(item.tags) ? item.tags : [],
+        used: !!item.used
+      };
+      const normalized = this.normalizeItem(info);
+      this.cardCache.set(id, normalized);
+      this.updateItem(normalized);
+    });
+    this.render();
+  }
+
+  composeId(project, index) {
+    if (!project || typeof index !== 'number') return null;
+    return `${project}:${index}`;
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  window.__workspace = new Workspace();
+});
