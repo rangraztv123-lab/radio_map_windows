@@ -179,3 +179,25 @@ body.ws-animating{transition:padding-right .24s ease;}
   .ws{width:min(var(--ws-w), 100vw);}
   body.ws-open{padding-right:min(var(--ws-w), 100vw);}
 }
+
+:root{--wsw-min:280px;--wsw-max:640px}
+.ws{position:fixed;inset-block:80px 0;inset-inline-end:0;width:var(--wsw,360px);background:#0f1115;border-inline-start:1px solid #23262e;box-shadow:-6px 0 14px rgba(0,0,0,.35);display:grid;grid-template-rows:auto 1fr auto;transition:transform .22s ease,width .1s linear;z-index:50}
+.ws.is-closed{transform:translateX(calc(100% - 36px))}
+.ws-toggle{position:absolute;inset-inline-start:-36px;inset-block-start:16px;width:32px;height:32px;border-radius:8px 0 0 8px;background:#151922;border:1px solid #23262e;display:grid;place-items:center;cursor:pointer;z-index:51}
+.ws.is-closed .ws-toggle-icon{transform:rotate(180deg)}
+.ws-header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-block-end:1px solid #23262e}
+.ws-clear{padding:6px 10px;background:#252a36;border:1px solid #2f3543;border-radius:8px;cursor:pointer}
+.ws-list{overflow:auto;padding:10px;display:grid;gap:10px}
+.ws-hint{margin:8px 12px 12px;color:#9aa3b2;font-size:.86rem}
+.ws-resizer{position:absolute;inset-block:0;inset-inline-start:-6px;width:6px;cursor:ew-resize;background:linear-gradient(90deg,transparent 40%,rgba(255,255,255,.07) 40% 60%,transparent 60%);opacity:.2}
+.ws-resizer:hover{opacity:.5}
+.ws-card{border:1px dashed #394255;border-radius:12px;padding:10px;background:#0c0f14}
+.ws-drop-ok{outline:2px dashed #4da3ff;outline-offset:-4px}
+
+/* drag handle on result cards */
+.card .drag-grip{width:22px;height:22px;border-radius:6px;border:1px dashed #49536a;background:repeating-linear-gradient(45deg,#49536a 0 2px,transparent 2px 4px);display:grid;place-items:center;cursor:grab;margin-inline:6px;opacity:.9}
+.card.dragging{outline:2px dashed #4da3ff}
+.result-card{display:flex;gap:12px;align-items:flex-start}
+.result-card .result-card-body{flex:1}
+.result-card .drag-grip{width:22px;height:22px;border-radius:6px;border:1px dashed #49536a;background:repeating-linear-gradient(45deg,#49536a 0 2px,transparent 2px 4px);display:grid;place-items:center;cursor:grab;margin-inline:6px;opacity:.9}
+.result-card.dragging{outline:2px dashed #4da3ff}

@@ -202,16 +202,22 @@ function render(){
   }else{
     results.forEach((f, k)=>{
       const orig = resultIdx[k];
+      const cardId = `${currentProject}:${orig}`;
       const card = document.createElement('div');
       card.className = `result-card${f.used ? ' used' : ''}`;
+      card.dataset.id = cardId;
+      card.dataset.project = currentProject;
+      card.dataset.index = String(orig);
+      card.dataset.file = f.file || '';
+      card.dataset.desc = f.desc || '';
+      card.dataset.tags = (f.tags || []).join(',');
+      card.dataset.used = f.used ? '1' : '0';
+      card.setAttribute('draggable', 'true');
 
-      const handle = document.createElement('button');
-      handle.type = 'button';
-      handle.className = 'card-grip';
-      handle.setAttribute('aria-label', 'Drag card');
-      handle.title = 'Drag';
-      handle.innerHTML = '';
-      card.appendChild(handle);
+      const grip = document.createElement('div');
+      grip.className = 'drag-grip';
+      grip.title = 'Drag card';
+      card.appendChild(grip);
 
       const body = document.createElement('div');
       body.className = 'result-card-body';
@@ -247,6 +253,22 @@ function render(){
       body.appendChild(toolbar);
 
       elResults.appendChild(card);
+      card.addEventListener('dragstart', (event) => {
+        event.dataTransfer.setData('text/plain', cardId);
+        event.dataTransfer.effectAllowed = 'copy';
+        card.classList.add('dragging');
+      });
+      card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
+      });
+      card.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'none';
+      });
+      card.addEventListener('drop', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
       if (window.Workspace && typeof window.Workspace.registerResultCard === 'function') {
         window.Workspace.registerResultCard(card, {project: currentProject, index: orig, data: f});
       }
@@ -413,15 +435,7 @@ importCsv.onchange = async (e)=>{
   await loadProjectData(currentProject, {keepFilters:true});
 };
 
-// Workspace bootstrap (after DOM ready)
-function bootWorkspace(){
-  if (window.Workspace && typeof window.Workspace.init === 'function') {
-    window.Workspace.init();
-  }
-}
-
 function startApp(){
-  bootWorkspace();
   loadProjects();
 }
 
